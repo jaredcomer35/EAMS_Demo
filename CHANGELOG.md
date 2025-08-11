@@ -6,19 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
-- **DataMosaix Upload** (preview): new tab with end-to-end prep flow
-  - Target picker: **Space → Model → View** (loads properties with inheritance)
-  - Source options: **CSV upload**, **MySQL table**, or **Combined** dataset from Connect & Download
-  - Column → property **mapping UI** with best-effort auto-map
-  - `external_id` options: use an existing column or auto-generate with a prefix
-  - **Dry-run** preview builds a payload DataFrame for would-be upload
-  - Save mapped payload to **`/data/uploads/*.csv`** and/or **download** it
+- **DataMosaix Upload – Batch mode:** Select multiple MySQL tables and multiple target Views and run one batch upload.
+  - Pairing strategies: **Zip tables ↔ views** (1:1 by order) or **All tables → first selected view**.
+  - Auto-mapping of properties by exact name (case-insensitive).
+  - Optional **sync delete**: remove nodes not present in the incoming payload (by `external_id`) before upload.
+- **DataMosaix Upload – external_id default:** If the source contains a column named `external_id` (any case), it is used by default; otherwise, IDs are generated with a sensible prefix.
+- **Logging:** More timestamped log entries for single and batch uploads.
 
 ### Changed
-- None yet.
+- **DataMosaix Upload – MySQL default limit:** Default “Max rows” for MySQL sources is now **30,000**.
 
 ### Fixed
-- None yet.
+- N/A
 
 ### Notes
 

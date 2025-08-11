@@ -1,3 +1,4 @@
+# region Imports
 import os
 import re
 import json
@@ -19,10 +20,13 @@ from cognite.client.data_classes import data_modeling as dm
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL
 from sqlalchemy.exc import OperationalError
+# endregion Imports
 
-# ============================================================
-# Version / Branding
-# ============================================================
+
+# region App Meta & Branding
+# ------------------------------------------------------------
+# Version & app identity shown in the UI
+# ------------------------------------------------------------
 APP_VERSION = "1.3.0 - dev"  # bump to 1.3.0 on release
 APP_TITLE = "Convergix DataMosaix View Explorer"
 APP_ICON_PATH = "assets/convergix_logo.png"
@@ -33,8 +37,14 @@ try:
 except Exception:
     pass
 
-st.set_page_config(page_title=f"{APP_TITLE} · v{APP_VERSION}", page_icon=_icon if _icon else "🧭", layout="wide")
+# Streamlit page config (must be set before any UI rendering)
+st.set_page_config(
+    page_title=f"{APP_TITLE} · v{APP_VERSION}",
+    page_icon=_icon if _icon else "🧭",
+    layout="wide",
+)
 
+# App header with logo + title
 left, right = st.columns([1, 8])
 with left:
     if _icon:
@@ -42,27 +52,39 @@ with left:
 with right:
     st.title(APP_TITLE)
     st.caption(f"Version {APP_VERSION}")
+# endregion App Meta & Branding
 
-# ============================================================
-# Utilities / Env / Logging
-# ============================================================
+
+# region Utilities, Environment, Logging
+# ------------------------------------------------------------
+# Helpers for environment loading, persistent JSON profiles,
+# and application logging (with timestamps).
+# ------------------------------------------------------------
 def _env(name: str, default: str = "") -> str:
+    """Get environment variable with fallback and strip whitespace."""
     return (os.getenv(name, default) or "").strip()
 
+def _ts() -> str:
+    """Timestamp for log entries."""
+    return _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
 def log(msg: str):
+    """Append a timestamped line to the session log buffer."""
     st.session_state.setdefault("logs", [])
-    st.session_state.logs.append(msg)
+    st.session_state.logs.append(f"[{_ts()}] {msg}")
 
 # persistent profile stores (bind-mounted volume at /data)
 PROFILE_STORE_PATH_CDF = _env("PROFILE_STORE_PATH", "/data/profiles.json")
 PROFILE_STORE_PATH_MYSQL = _env("MYSQL_PROFILE_STORE_PATH", "/data/mysql_profiles.json")
 
 def _path(p: str) -> Path:
+    """Ensure the parent folder exists and return Path."""
     pp = Path(p)
     pp.parent.mkdir(parents=True, exist_ok=True)
     return pp
 
 def load_json_profiles(path: str) -> Dict[str, Dict[str, str]]:
+    """Load a dict of named connection profiles from a JSON file."""
     f = _path(path)
     if f.exists():
         try:
@@ -74,17 +96,28 @@ def load_json_profiles(path: str) -> Dict[str, Dict[str, str]]:
     return {}
 
 def save_json_profile(path: str, name: str, profile: Dict[str, str]):
+    """Upsert a single profile in the JSON store."""
     data = load_json_profiles(path)
     data[name] = profile
     _path(path).write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 def delete_json_profile(path: str, name: str):
+    """Delete a named profile from the JSON store."""
     data = load_json_profiles(path)
     if name in data:
         del data[name]
-        _path(path).write_text(json.dumps(data, indent=2), encoding="utf-8")
+    _path(path).write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 def env_profiles(prefix_list_var: str = "DATAMOSAIX_PROFILES", var_prefix: str = "DMX_") -> Dict[str, Dict[str, str]]:
+    """
+    Load CDF profiles from environment variables.
+
+    Example:
+    DATAMOSAIX_PROFILES=prod,dev
+    DMX_PROD_HOST=...
+    DMX_PROD_PROJECT=...
+    ...
+    """
     names = [n.strip() for n in _env(prefix_list_var, "").split(",") if n.strip()]
     profiles: Dict[str, Dict[str, str]] = {}
     for n in names:
@@ -103,6 +136,15 @@ def env_profiles(prefix_list_var: str = "DATAMOSAIX_PROFILES", var_prefix: str =
     return profiles
 
 def mysql_env_profiles(prefix_list_var: str = "MYSQL_PROFILES", var_prefix: str = "MYSQL_") -> Dict[str, Dict[str, str]]:
+    """
+    Load MySQL profiles from environment variables.
+
+    Example:
+    MYSQL_PROFILES=local,stage
+    MYSQL_LOCAL_HOST=...
+    MYSQL_LOCAL_DB=...
+    ...
+    """
     names = [n.strip() for n in _env(prefix_list_var, "").split(",") if n.strip()]
     profiles: Dict[str, Dict[str, str]] = {}
     for n in names:
@@ -118,11 +160,15 @@ def mysql_env_profiles(prefix_list_var: str = "MYSQL_PROFILES", var_prefix: str 
         if prof["host"] and prof["user"] and prof["db"]:
             profiles[n] = prof
     return profiles
+# endregion Utilities, Environment, Logging
 
-# ============================================================
-# Cognite CDF client + caching
-# ============================================================
+
+# region DataMosaix (CDF) client and helpers
+# ------------------------------------------------------------
+# Build authenticated CDF client and cache model/view lookups
+# ------------------------------------------------------------
 def build_client(host_url: str, project: str, token_url: str, client_id: str, client_secret: str, scopes_csv: str) -> CogniteClient:
+    """Build an OAuth client-credentialed Cognite client."""
     def need(n, v):
         v = (v or "").strip()
         if not v:
@@ -140,16 +186,19 @@ def build_client(host_url: str, project: str, token_url: str, client_id: str, cl
 
 @st.cache_data(show_spinner=False)
 def list_spaces(_client: CogniteClient, conn_key: str) -> List[str]:
+    """Return all spaces containing any data models."""
     models = _client.data_modeling.data_models.list(limit=None, all_versions=False)
     return sorted({m.space for m in models})
 
 @st.cache_data(show_spinner=False)
 def list_models_latest(_client: CogniteClient, conn_key: str, space: str) -> List[Tuple[str, str]]:
+    """Return latest versions of all Data Models in a space."""
     models = _client.data_modeling.data_models.list(limit=None, all_versions=False)
     return [(m.external_id, str(m.version)) for m in models if m.space == space]
 
 @st.cache_data(show_spinner=False)
 def list_views_for_model(_client: CogniteClient, conn_key: str, space: str, dm_eid: str, dm_ver: str) -> List[Tuple[str, str]]:
+    """Return views (eid, version) contained in a Data Model."""
     dmid = dm.DataModelId(space=space, external_id=dm_eid, version=str(dm_ver))
     details = _client.data_modeling.data_models.retrieve(dmid, inline_views=True)
     if not details:
@@ -160,6 +209,7 @@ def list_views_for_model(_client: CogniteClient, conn_key: str, space: str, dm_e
     return [(v.external_id, str(v.version)) for v in model.views]
 
 def flatten_properties_from_instance(inst) -> Dict[str, Any]:
+    """Safely flatten instance properties across sources."""
     props_obj = getattr(inst, "properties", None)
     if props_obj:
         if isinstance(props_obj, dict):
@@ -199,7 +249,17 @@ def flatten_properties_from_instance(inst) -> Dict[str, Any]:
     return {}
 
 @st.cache_data(show_spinner=True)
-def fetch_view_dataframe(_client: CogniteClient, conn_key: str, space: str, dm_eid: str, dm_ver: str, view_eid: str, view_ver: str, max_rows: Optional[int]) -> pd.DataFrame:
+def fetch_view_dataframe(
+    _client: CogniteClient,
+    conn_key: str,
+    space: str,
+    dm_eid: str,
+    dm_ver: str,
+    view_eid: str,
+    view_ver: str,
+    max_rows: Optional[int],
+) -> pd.DataFrame:
+    """Download nodes from a View into a flattened DataFrame."""
     view_id = dm.ViewId(space=space, external_id=view_eid, version=str(view_ver))
     view_def_list = _client.data_modeling.views.retrieve(view_id, include_inherited_properties=True)
     if not view_def_list:
@@ -222,10 +282,13 @@ def fetch_view_dataframe(_client: CogniteClient, conn_key: str, space: str, dm_e
     df["__view__"] = view_eid
     df["__view_version__"] = str(view_ver)
     return df
+# endregion DataMosaix (CDF) client and helpers
 
-# ============================================================
-# Filter helpers (stable keys + richer operators)
-# ============================================================
+
+# region DataFrame filtering widgets
+# ------------------------------------------------------------
+# Reusable, richer filtering UI for displayed tables
+# ------------------------------------------------------------
 def _is_numeric_series(s: pd.Series) -> bool:
     return pd.api.types.is_numeric_dtype(s)
 
@@ -237,13 +300,11 @@ def _as_dates(s: pd.Series) -> pd.Series:
 
 def filter_dataframe(df: pd.DataFrame, key_prefix: str) -> pd.DataFrame:
     """
-    Stable, richer filtering UI.
-    - key_prefix must be stable across reruns for the same table/view.
-    - Offers Equals / Not Equals / Contains / Not Contains for text.
-    - Numeric: Equals / Not Equals / Range.
-    - Datetime: On date / Not on date / Between.
+    Filter UI with stable keys and operators for text/number/datetime.
+    key_prefix must remain stable per (DB, table) to persist widget state.
     """
     with st.expander("Filters", expanded=False):
+        # global fuzzy search
         q = st.text_input("Search across all columns", placeholder="Type to filter…", key=f"{key_prefix}_q")
         filtered = df
         if q:
@@ -255,6 +316,7 @@ def filter_dataframe(df: pd.DataFrame, key_prefix: str) -> pd.DataFrame:
                     pass
             filtered = filtered[mask]
 
+        # per-column filters
         cols = st.multiselect("Add per-column filters", sorted(list(df.columns)), key=f"{key_prefix}_cols")
 
         for c in cols:
@@ -328,11 +390,15 @@ def filter_dataframe(df: pd.DataFrame, key_prefix: str) -> pd.DataFrame:
                             filtered = filtered[mask] if op == "Equals" else filtered[~mask]
 
     return filtered
+# endregion DataFrame filtering widgets
 
-# ============================================================
-# MySQL helpers
-# ============================================================
+
+# region MySQL helpers
+# ------------------------------------------------------------
+# Engine construction, simple reads/writes, and table listing
+# ------------------------------------------------------------
 def _mysql_env_default() -> Dict[str, str]:
+    """Default MySQL connection values (via env or sensible defaults)."""
     return {
         "host": _env("MYSQL_HOST", "host.docker.internal"),
         "port": _env("MYSQL_PORT", "3306"),
@@ -342,11 +408,13 @@ def _mysql_env_default() -> Dict[str, str]:
     }
 
 def _sanitize_table_name(name: str) -> str:
+    """Sanitize arbitrary strings for use as a MySQL table name."""
     s = (name or "cdf_view").strip().lower()
     s = re.sub(r"[^0-9a-zA-Z_]", "_", s)
     return s or "cdf_view"
 
 def _mysql_engine_from_profile(prof: Dict[str, str]):
+    """Create a SQLAlchemy engine from a profile dict."""
     url = URL.create(
         "mysql+pymysql",
         username=prof.get("user") or "",
@@ -359,6 +427,7 @@ def _mysql_engine_from_profile(prof: Dict[str, str]):
     return create_engine(url, pool_pre_ping=True)
 
 def test_mysql_connection(prof: Dict[str, str]) -> Tuple[bool, str]:
+    """Simple connection test (SELECT 1)."""
     try:
         engine = _mysql_engine_from_profile(prof)
         with engine.connect() as conn:
@@ -370,6 +439,7 @@ def test_mysql_connection(prof: Dict[str, str]) -> Tuple[bool, str]:
         return False, f"Error: {e}"
 
 def commit_dataframe_to_mysql(df: pd.DataFrame, table_name: str, prof: Dict[str, str]) -> int:
+    """Replace table contents with the given DataFrame."""
     if df is None:
         raise RuntimeError("No dataframe to commit.")
     engine = _mysql_engine_from_profile(prof)
@@ -385,6 +455,7 @@ def commit_dataframe_to_mysql(df: pd.DataFrame, table_name: str, prof: Dict[str,
     return len(df)
 
 def list_mysql_tables(prof: Dict[str, str]) -> List[str]:
+    """List tables for a given database/schema."""
     engine = _mysql_engine_from_profile(prof)
     q = text("SELECT table_name FROM information_schema.tables WHERE table_schema = :db ORDER BY table_name")
     with engine.connect() as conn:
@@ -392,16 +463,20 @@ def list_mysql_tables(prof: Dict[str, str]) -> List[str]:
     return [r[0] for r in rows]
 
 def read_mysql_table(prof: Dict[str, str], table_name: str, limit: Optional[int] = None) -> pd.DataFrame:
+    """Read entire table (or up to LIMIT) as DataFrame."""
     engine = _mysql_engine_from_profile(prof)
     safe = re.sub(r"[^\w]+", "", table_name)
     sql = f"SELECT * FROM `{safe}`"
     if limit:
         sql += f" LIMIT {int(limit)}"
     return pd.read_sql(sql, engine)
+# endregion MySQL helpers
 
-# ============================================================
-# AI Demo Data transforms (subset)
-# ============================================================
+
+# region AI Demo Data transforms (shared)
+# ------------------------------------------------------------
+# Light-weight transformation helpers used in the demo tab
+# ------------------------------------------------------------
 AI_MODEL_DEFAULT = _env("OPENAI_MODEL", "gpt-4.1-mini")
 RANDOM_SEED = 42
 
@@ -450,6 +525,7 @@ def _company_bucket(industry: str) -> str:
     return "generic"
 
 def gen_company_name(industry: str, use_ai: bool = True) -> str:
+    """Optionally uses OpenAI to generate a fake company name, else heuristic."""
     bucket = _company_bucket(industry)
     if use_ai:
         try:
@@ -473,6 +549,7 @@ def gen_company_name(industry: str, use_ai: bool = True) -> str:
     return (p + s).title()
 
 def get_names_with_company(industry: str, plant_count: int, region_count: int, segment_count: int, use_ai: bool = True) -> Dict[str, List[str]]:
+    """Derive consistent names for plants/regions/segments for demo data."""
     random.seed(RANDOM_SEED)
     company = gen_company_name(industry, use_ai=use_ai)
     regions = ["Northern District","Southern District","Eastern District","Western District","Central District","Coastal Operations","Inland Region","Metro West","Great Lakes Region"]
@@ -498,6 +575,7 @@ def get_names_with_company(industry: str, plant_count: int, region_count: int, s
 
 _ALNUM_RUN = re.compile(r"[A-Za-z]+|\d+|[^A-Za-z0-9]+")
 def preserve_format_scramble(s: str) -> str:
+    """Scramble alphanumeric strings while preserving structure/length."""
     if not isinstance(s, str) or s == "": return s
     parts = _ALNUM_RUN.findall(s)
     out = []
@@ -520,6 +598,7 @@ def preserve_format_scramble(s: str) -> str:
     return "".join(out)
 
 def _plant_code4(plant: str) -> str:
+    """Derive a 4-letter code from a plant name."""
     if not isinstance(plant, str) or not plant.strip(): return "PLNT"
     words = re.findall(r"[A-Za-z]+", plant)
     if not words: return "PLNT"
@@ -540,13 +619,14 @@ def _plant_code4(plant: str) -> str:
     return code4
 
 def server_name_for_plant(plant: str, seed: int = RANDOM_SEED) -> str:
+    """Deterministic server name per plant."""
     code = _plant_code4(plant)
     rnd = random.Random(seed + hash(plant))
     num = rnd.randint(100, 999)
     return f"MS{code}{num}MP"
 
 def _fake_ip_for_plant(plant: str) -> str:
-    # kept for completeness; no longer used in mutate_path_minimal
+    """Kept for completeness; not used by mutate_path_minimal anymore."""
     rnd = random.Random(RANDOM_SEED + hash(plant))
     choice = rnd.choice(["10", "172", "192"])
     if choice == "10":
@@ -560,7 +640,6 @@ def mutate_path_minimal(path: str, plant: str, server: Optional[str], per_row_se
     Replace ONLY the server segment (first path segment) and keep the remainder intact.
     Specifically:
       New path = <ServerName>\<ORIGINAL_FROM_FIRST_IP_OR_SECOND_SEGMENT_ONWARD>
-
     Example:
       MSDUNL227MP!Dunlop10-4-10\10.4.10.207\Backplane\4
       -> <NewServerName>\10.4.10.207\Backplane\4
@@ -568,17 +647,13 @@ def mutate_path_minimal(path: str, plant: str, server: Optional[str], per_row_se
     if not isinstance(path, str):
         path = ""
 
-    # Choose separator based on original; default to backslash.
     sep = "\\" if ("\\" in path or "/" not in path) else "/"
-
-    # Split on both backslash and slash; keep non-empty parts.
     parts = [p for p in re.split(r"[\\/]+", path) if p]
 
     server_name = per_row_server or server or "SERVER01"
     if not parts:
-        return server_name  # nothing else to preserve
+        return server_name
 
-    # Find the first IP-like segment; if found, we keep from that IP onward.
     ip_re = re.compile(r"^(?:\d{1,3}\.){3}\d{1,3}$")
     ip_idx = None
     for i, seg in enumerate(parts):
@@ -587,14 +662,14 @@ def mutate_path_minimal(path: str, plant: str, server: Optional[str], per_row_se
             break
 
     if ip_idx is not None:
-        rest = sep.join(parts[ip_idx:])  # include the IP segment
+        rest = sep.join(parts[ip_idx:])
     else:
-        # No IP found; keep everything after the first segment.
         rest = sep.join(parts[1:])
 
     return server_name + (sep + rest if rest else "")
 
 def mutate_device_address(addr: str) -> str:
+    """Randomize device addresses while preserving structure."""
     if not isinstance(addr, str) or addr == "": return addr
     if ":" in addr and "." in addr:
         host, port = addr.split(":", 1)
@@ -610,6 +685,7 @@ def mutate_device_address(addr: str) -> str:
     return preserve_format_scramble(addr)
 
 def mutate_raai_filename(orig: str, plant: str) -> str:
+    """Rewrite filename to include plant name, preserving extension."""
     if not isinstance(orig, str) or orig == "":
         return f"{plant.replace(' ', '_')}_RAAI.json"
     m = re.search(r"\.([A-Za-z0-9]{1,6})$", orig)
@@ -628,6 +704,7 @@ SHUFFLE_BLOCK = [
 ]
 
 def shuffle_block(df: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
+    """Shuffle a set of columns together to break direct correlations."""
     present = [c for c in columns if c in df.columns]
     if not present: return df
     block = df[present].copy()
@@ -639,6 +716,7 @@ def shuffle_block(df: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
     return df
 
 def apply_common_changes(df: pd.DataFrame, industry: str, maps: Dict, server_override: Optional[str], add_server_col: bool = False) -> pd.DataFrame:
+    """Apply renaming/masking/server path changes to a DataFrame."""
     df = df.copy()
     plant_map = maps.get("plant_map", {}); region_map = maps.get("region_map", {}); segment_map = maps.get("segment_map", {})
     ai_names = {"plants": maps.get("plants", []), "regions": maps.get("regions", []), "segments": maps.get("segments", [])}
@@ -654,7 +732,7 @@ def apply_common_changes(df: pd.DataFrame, industry: str, maps: Dict, server_ove
     plant_server_map = {p: server_name_for_plant(p) for p in new_plants if p}
     if add_server_col and "ServerName" not in df.columns:
         df.insert(0, "ServerName", "")
-    # Path behavior: replace ONLY the server segment; preserve the original IP and remainder
+    # Only replace server segment; preserve IP and remainder
     for col in [c for c in ["Path","AssetPath","Location"] if c in df.columns]:
         df[col] = df.apply(lambda r: mutate_path_minimal(
             str(r[col]), str(r.get("Plant","")), server_override,
@@ -680,6 +758,7 @@ def apply_common_changes(df: pd.DataFrame, industry: str, maps: Dict, server_ove
     return df
 
 def build_name_maps_from_mysql_tables(engine, db: str, table_list: List[str], industry: str, use_ai: bool) -> Dict[str, Any]:
+    """Scan selected MySQL tables to build plant/region/segment rename maps."""
     plants, regions, segments = set(), set(), set()
     for t in table_list:
         safe = re.sub(r"[^\w]+", "", t)
@@ -695,10 +774,13 @@ def build_name_maps_from_mysql_tables(engine, db: str, table_list: List[str], in
     names["region_map"] = {old: names["regions"][i % len(names["regions"])] for i, old in enumerate(sorted(regions))} if regions else {}
     names["segment_map"] = {old: names["segments"][i % len(names["segments"])] for i, old in enumerate(sorted(segments))} if segments else {}
     return names
+# endregion AI Demo Data transforms (shared)
 
-# ============================================================
-# Session state
-# ============================================================
+
+# region Session State
+# ------------------------------------------------------------
+# Centralized initialization of state variables
+# ------------------------------------------------------------
 ss = st.session_state
 # CDF
 ss.setdefault("client", None)
@@ -726,12 +808,22 @@ ss.setdefault("viewer_mysql_prof", {})
 ss.setdefault("viewer_tables", [])
 ss.setdefault("viewer_selected_tables", [])
 ss.setdefault("viewer_current_table", None)
+# endregion Session State
 
-# ============================================================
-# Tabs
-# ============================================================
-tabs = st.tabs(["🔌 Connect & Download", "📊 Data Explorer", "🤖 AI Demo Data", "⬆️ DataMosaix Upload", "🪵 Logs", "ℹ️ About"])
 
+# region Tabs
+tabs = st.tabs([
+    "🔌 Connect & Download",
+    "📊 Data Explorer",
+    "🤖 AI Demo Data",
+    "⬆️ DataMosaix Upload",
+    "🪵 Logs",
+    "ℹ️ About",
+])
+# endregion Tabs
+
+
+# region Connect & Download
 # ------------------------ Connect & Download ------------------------
 with tabs[0]:
     st.header("Connect")
@@ -1030,7 +1122,10 @@ with tabs[0]:
                     except Exception as e:
                         st.error(f"Failed: {e}")
                         log(f"ERROR commit each: {e}")
+# endregion Connect & Download
 
+
+# region Data Explorer
 # ------------------------ Data Explorer (Generic MySQL viewer) ------------------------
 with tabs[1]:
     st.header("MySQL Table Viewer")
@@ -1108,7 +1203,6 @@ with tabs[1]:
             try:
                 df_view = read_mysql_table(viewer_prof_current, current_table, limit=int(max_rows_view))
                 st.caption(f"Showing up to {len(df_view):,} rows from `{v_db}.{current_table}`")
-                # stable key prefix per DB+table
                 filtered = filter_dataframe(df_view, key_prefix=f"viewer_{v_db}_{current_table}")
                 st.dataframe(filtered, use_container_width=True, height=520)
 
@@ -1178,7 +1272,10 @@ with tabs[1]:
                                    file_name=f"{current_table}_filtered.csv", mime="text/csv", key="viewer_dl")
             except Exception as e:
                 st.error(f"Failed to read table: {e}")
+# endregion Data Explorer
 
+
+# region AI Demo Data
 # ------------------------ AI Demo Data (MySQL → MySQL) ------------------------
 with tabs[2]:
     st.header("AI Demo Data (MySQL → MySQL)")
@@ -1354,10 +1451,13 @@ with tabs[2]:
         except Exception as e:
             st.error(f"Failed: {e}")
             log(f"ERROR write demo: {e}")
+# endregion AI Demo Data
 
+
+# region DataMosaix Upload
 # ------------------------ DataMosaix Upload ------------------------
 with tabs[3]:
-    # --- local helpers (scoped to this tab to avoid clutter) ---
+    # --- local helpers (scoped to this tab) ---
     def _get_view_properties(_client: CogniteClient, space: str, view_eid: str, view_ver: str) -> List[str]:
         """Return property names for a view (including inherited)."""
         v = dm.ViewId(space=space, external_id=view_eid, version=str(view_ver))
@@ -1376,252 +1476,521 @@ with tabs[3]:
         return out
 
     def _save_mapped_csv(df: pd.DataFrame, out_path: Path) -> None:
+        """Persist mapped payload under /data/uploads for reuse."""
         out_path.parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(out_path, index=False, encoding="utf-8")
 
-    st.header("DataMosaix Upload (Preview)")
-    st.caption("Prepare rows to upload into a target **View**. Choose a source (CSV/MySQL/Combined), map columns → properties, dry-run, and save a payload CSV.")
+    st.header("DataMosaix Upload")
+    st.caption("Prepare rows to upload into **one or many** target Views. Choose a source (CSV/MySQL/Combined), map or auto-map columns → properties, dry-run (single), or batch upload (multiple).")
 
     # --- guard: need a CDF client (connect in tab 1) ---
-    if st.session_state.client is None:
+    client = st.session_state.get("client")
+    conn_key = st.session_state.get("conn_key", "")
+    if not client:
         st.warning("Please connect to DataMosaix in **Connect & Download** first.")
-        st.stop()
-
-    client = st.session_state.client
-    conn_key = st.session_state.conn_key
-
-    # ---------- Target selection: Space → Model → View ----------
-    st.subheader("Target (where to upload)")
-    t1, t2 = st.columns([1, 3])
-    with t1:
-        if st.button("Load Spaces (target)", use_container_width=True, key="upload_load_spaces"):
-            try:
-                st.session_state.upload_spaces = list_spaces(client, conn_key)
-                st.success(f"Loaded {len(st.session_state.upload_spaces)} spaces.")
-            except Exception as e:
-                st.error(str(e))
-    with t2:
-        space_u = st.selectbox(
-            "Space",
-            options=(st.session_state.get("upload_spaces") or st.session_state.get("spaces") or ["(none)"]),
-            key="upload_space_pick",
-        )
-
-    um1, um2 = st.columns([1, 3])
-    with um1:
-        can_load_models = bool(space_u and space_u != "(none)")
-        if st.button("Load Models (target)", use_container_width=True, disabled=not can_load_models, key="upload_load_models"):
-            try:
-                st.session_state.upload_models = list_models_latest(client, conn_key, space_u)
-                st.success(f"Loaded {len(st.session_state.upload_models)} models.")
-            except Exception as e:
-                st.error(str(e))
-    with um2:
-        dm_display_u = [f"{eid} v{ver}" for (eid, ver) in (st.session_state.get("upload_models") or [])] or ["(none)"]
-        dm_choice_u = st.selectbox("Model", options=dm_display_u, key="upload_model_pick")
-        dm_eid_u, dm_ver_u = ("", "")
-        if " v" in dm_choice_u:
-            dm_eid_u, dm_ver_u = dm_choice_u.rsplit(" v", 1)
-
-    uv1, uv2 = st.columns([1, 3])
-    with uv1:
-        can_load_views = bool(dm_eid_u and dm_ver_u and dm_choice_u != "(none)")
-        if st.button("Load Views (target)", use_container_width=True, disabled=not can_load_views, key="upload_load_views"):
-            try:
-                st.session_state.upload_views = list_views_for_model(client, conn_key, space_u, dm_eid_u, dm_ver_u)
-                st.success(f"Loaded {len(st.session_state.upload_views)} views.")
-            except Exception as e:
-                st.error(str(e))
-    with uv2:
-        view_display_u = [f"{eid} v{ver}" for (eid, ver) in (st.session_state.get("upload_views") or [])]
-        view_choice_u = st.selectbox("Target View", options=(view_display_u or ["(none)"]), key="upload_view_pick")
-        view_eid_u, view_ver_u = ("", "")
-        if " v" in view_choice_u:
-            view_eid_u, view_ver_u = view_choice_u.rsplit(" v", 1)
-
-    valid_target = bool(space_u and dm_eid_u and view_eid_u)
-
-    st.divider()
-
-    # ---------- Source selection ----------
-    st.subheader("Source (what to upload)")
-    src_kind = st.radio("Pick a source", ["CSV upload", "MySQL table", "Combined (from Connect & Download)"],
-                        horizontal=True, key="upload_src_kind")
-
-    df_source: Optional[pd.DataFrame] = None
-
-    if src_kind == "CSV upload":
-        file = st.file_uploader("Upload CSV", type=["csv"], accept_multiple_files=False, key="upload_csv_file")
-        if file is not None:
-            try:
-                df_source = pd.read_csv(file)
-                st.success(f"Loaded CSV with {len(df_source):,} rows and {len(df_source.columns)} columns.")
-                st.dataframe(df_source.head(50), use_container_width=True, height=300)
-            except Exception as e:
-                st.error(f"Failed to read CSV: {e}")
-
-    elif src_kind == "MySQL table":
-        # reuse your existing MySQL helpers and UX
-        mysql_envs_u = mysql_env_profiles()
-        mysql_saved_u = load_json_profiles(PROFILE_STORE_PATH_MYSQL)
-        mysql_defaults_u = _mysql_env_default()
-
-        c1, c2, c3 = st.columns([2, 1, 1])
-        with c1:
-            pick = st.selectbox("Load MySQL profile", ["(none)"] + [f"[env] {n}" for n in sorted(mysql_envs_u.keys())] +
-                                [f"[saved] {n}" for n in sorted(mysql_saved_u.keys())], key="upload_mysql_pick")
-        with c2:
-            if st.button("Load", use_container_width=True, key="upload_mysql_load"):
-                if pick.startswith("[env] "):
-                    name = pick.replace("[env] ", "", 1)
-                    st.session_state.upload_mysql_prof = mysql_envs_u.get(name, {})
-                elif pick.startswith("[saved] "):
-                    name = pick.replace("[saved] ", "", 1)
-                    st.session_state.upload_mysql_prof = mysql_saved_u.get(name, {})
-                else:
-                    st.session_state.upload_mysql_prof = {}
-        with c3:
-            if st.button("Test", use_container_width=True, key="upload_mysql_test"):
-                ok, msg = test_mysql_connection(st.session_state.get("upload_mysql_prof") or mysql_defaults_u)
-                (st.success if ok else st.error)(msg)
-
-        p = st.session_state.get("upload_mysql_prof") or mysql_defaults_u
-        m1, m2, m3, m4, m5 = st.columns([2,1,1,1,1])
-        with m1:
-            u_host = st.text_input("Host", value=p.get("host",""), key="upload_mysql_host")
-        with m2:
-            u_port = st.text_input("Port", value=str(p.get("port","3306")), key="upload_mysql_port")
-        with m3:
-            u_user = st.text_input("User", value=p.get("user",""), key="upload_mysql_user")
-        with m4:
-            sh = st.toggle("Show password", value=False, key="upload_mysql_showpwd")
-            u_pwd = st.text_input("Password", value=p.get("password",""), type="default" if sh else "password", key="upload_mysql_pwd")
-        with m5:
-            u_db = st.text_input("Database", value=p.get("db",""), key="upload_mysql_db")
-
-        prof_u = {"host": u_host, "port": u_port, "user": u_user, "password": u_pwd, "db": u_db}
-
-        if st.button("List tables", key="upload_mysql_list_tables"):
-            try:
-                st.session_state.upload_mysql_tables = list_mysql_tables(prof_u)
-                st.success(f"Found {len(st.session_state.upload_mysql_tables)} tables.")
-            except Exception as e:
-                st.error(f"Failed to list tables: {e}")
-
-        tables_u = st.session_state.get("upload_mysql_tables") or []
-        if tables_u:
-            tsel, lim = st.columns([2,1])
-            with tsel:
-                tbl = st.selectbox("Pick table", options=tables_u, key="upload_mysql_table_pick")
-            with lim:
-                lim_rows = st.number_input("Max rows", min_value=10, max_value=500000, value=10000, step=1000, key="upload_mysql_limit")
-            if tbl:
-                try:
-                    df_source = read_mysql_table(prof_u, tbl, limit=int(lim_rows))
-                    st.caption(f"Showing up to {len(df_source):,} rows from `{u_db}.{tbl}`")
-                    st.dataframe(df_source.head(50), use_container_width=True, height=300)
-                except Exception as e:
-                    st.error(f"Failed to read table: {e}")
-
-    else:  # Combined (from previous tab)
-        if isinstance(st.session_state.get("combined_df"), pd.DataFrame) and not st.session_state.combined_df.empty:
-            df_source = st.session_state.combined_df.copy()
-            st.info(f"Using combined dataset from Connect & Download: {len(df_source):,} rows, {len(df_source.columns)} columns.")
-            st.dataframe(df_source.head(50), use_container_width=True, height=300)
-        else:
-            st.warning("No combined data found. Fetch data in **Connect & Download** first.")
-
-    st.divider()
-
-    # ---------- Mapping UI + Dry-run ----------
-    st.subheader("Map columns → View properties")
-
-    if not valid_target:
-        st.info("Pick a target Space → Model → View above.")
-        st.stop()
-
-    if df_source is None or df_source.empty:
-        st.info("Choose/Load a source first.")
-        st.stop()
-
-    try:
-        props = _get_view_properties(client, space_u, view_eid_u, view_ver_u)
-    except Exception as e:
-        st.error(f"Failed to read view schema: {e}")
-        st.stop()
-
-    if not props:
-        st.warning("No properties found on the selected view.")
-        st.stop()
-
-    # external_id handling
-    st.markdown("**Node identifier (external_id)**")
-    id_mode = st.radio("How to set `external_id`?", ["Use a column", "Generate"], horizontal=True, key="upload_id_mode")
-    external_id_series = None
-    if id_mode == "Use a column":
-        id_col = st.selectbox("Column for external_id", options=list(df_source.columns), key="upload_id_col")
-        external_id_series = df_source[id_col].astype(str)
     else:
-        prefix = st.text_input("Generated external_id prefix", value=f"{view_eid_u}_", key="upload_id_prefix")
-        external_id_series = pd.Series([f"{prefix}{i+1}" for i in range(len(df_source))], index=df_source.index, dtype="string")
-
-    # property mapping table
-    auto_map = _auto_map_columns(df_source, props)
-    st.markdown("**Property mappings** (skip any you don't want to set)")
-    mapped: Dict[str, Optional[str]] = {}
-    cols_map = st.columns(2)
-    for i, p in enumerate(sorted(props)):
-        with cols_map[i % 2]:
-            mapped[p] = st.selectbox(
-                f"{p}",
-                options=["(skip)"] + list(df_source.columns),
-                index=(1 + list(df_source.columns).index(auto_map[p]) if p in auto_map else 0),
-                key=f"upload_map_{p}",
+        # ---------- Target selection: Space → Model → View(s) ----------
+        st.subheader("Target (where to upload)")
+        t1, t2 = st.columns([1, 3])
+        with t1:
+            if st.button("Load Spaces (target)", use_container_width=True, key="upload_load_spaces"):
+                try:
+                    st.session_state.upload_spaces = list_spaces(client, conn_key)
+                    st.success(f"Loaded {len(st.session_state.upload_spaces)} spaces.")
+                    log(f"[Upload] Loaded spaces: count={len(st.session_state.upload_spaces)}")
+                except Exception as e:
+                    st.error(str(e)); log(f"[Upload][ERROR] Load spaces failed: {e}")
+        with t2:
+            space_u = st.selectbox(
+                "Space",
+                options=(st.session_state.get("upload_spaces") or st.session_state.get("spaces") or ["(none)"]),
+                key="upload_space_pick",
             )
 
-    # preview / dry-run
-    if st.button("Dry-run mapping", type="primary", key="upload_dryrun"):
-        included_props = [p for p, c in mapped.items() if c and c != "(skip)"]
-        if not included_props:
-            st.warning("No properties selected to map.")
-        else:
-            out_cols = ["external_id"] + included_props
-            out_df = pd.DataFrame(index=df_source.index)
-            out_df["external_id"] = external_id_series.astype(str)
-            for p in included_props:
-                out_df[p] = df_source[mapped[p]]
-            st.success(f"Prepared {len(out_df):,} rows with {len(included_props)} mapped properties.")
-            st.dataframe(out_df.head(50), use_container_width=True, height=320)
+        um1, um2 = st.columns([1, 3])
+        with um1:
+            can_load_models = bool(space_u and space_u != "(none)")
+            if st.button("Load Models (target)", use_container_width=True, disabled=not can_load_models, key="upload_load_models"):
+                try:
+                    st.session_state.upload_models = list_models_latest(client, conn_key, space_u)
+                    st.success(f"Loaded {len(st.session_state.upload_models)} models.")
+                    log(f"[Upload] Loaded models for space='{space_u}': count={len(st.session_state.upload_models)}")
+                except Exception as e:
+                    st.error(str(e)); log(f"[Upload][ERROR] Load models failed: {e}")
+        with um2:
+            dm_display_u = [f"{eid} v{ver}" for (eid, ver) in (st.session_state.get("upload_models") or [])] or ["(none)"]
+            dm_choice_u = st.selectbox("Model", options=dm_display_u, key="upload_model_pick")
+            dm_eid_u, dm_ver_u = ("", "")
+            if " v" in dm_choice_u:
+                dm_eid_u, dm_ver_u = dm_choice_u.rsplit(" v", 1)
 
-            # Save-to-volume option
-            fname = f"cdf_upload_{space_u}_{view_eid_u}_v{view_ver_u}.csv".replace("/", "-")
-            out_path = Path("/data/uploads") / fname
-            col_save, col_dl = st.columns([1,1])
-            with col_save:
-                if st.button("Save mapped CSV to /data/uploads", key="upload_save_csv"):
+        uv1, uv2 = st.columns([1, 3])
+        with uv1:
+            can_load_views = bool(dm_eid_u and dm_ver_u and dm_choice_u != "(none)")
+            if st.button("Load Views (target)", use_container_width=True, disabled=not can_load_views, key="upload_load_views"):
+                try:
+                    st.session_state.upload_views = list_views_for_model(client, conn_key, space_u, dm_eid_u, dm_ver_u)
+                    st.success(f"Loaded {len(st.session_state.upload_views)} views.")
+                    log(f"[Upload] Loaded views for model='{dm_eid_u}' v{dm_ver_u}: count={len(st.session_state.upload_views)}")
+                except Exception as e:
+                    st.error(str(e)); log(f"[Upload][ERROR] Load views failed: {e}")
+        with uv2:
+            view_display_u = [f"{eid} v{ver}" for (eid, ver) in (st.session_state.get("upload_views") or [])]
+            selected_views_u = st.multiselect("Target View(s)", options=(view_display_u or []), default=view_display_u[:1] if view_display_u else [], key="upload_views_multiselect")
+
+        have_any_views = bool(selected_views_u)
+        have_single_view = bool(have_any_views and len(selected_views_u) == 1)
+
+        st.divider()
+
+        # ---------- Source selection ----------
+        st.subheader("Source (what to upload)")
+        src_kind = st.radio("Pick a source", ["CSV upload", "MySQL table(s)", "Combined (from Connect & Download)"],
+                            horizontal=True, key="upload_src_kind_v2")
+
+        df_source: Optional[pd.DataFrame] = None
+        log(f"[Upload] Source selected: {src_kind}")
+
+        mysql_prof_for_upload = None
+        mysql_tables_loaded: List[str] = []
+
+        if src_kind == "CSV upload":
+            file = st.file_uploader("Upload CSV", type=["csv"], accept_multiple_files=False, key="upload_csv_file_v2")
+            if file is not None:
+                try:
+                    df_source = pd.read_csv(file)
+                    st.success(f"Loaded CSV with {len(df_source):,} rows and {len(df_source.columns)} columns.")
+                    st.dataframe(df_source.head(50), use_container_width=True, height=300)
+                    log(f"[Upload] CSV loaded: rows={len(df_source)}, cols={len(df_source.columns)}, name='{getattr(file, 'name', 'uploaded.csv')}'")
+                except Exception as e:
+                    st.error(f"Failed to read CSV: {e}"); log(f"[Upload][ERROR] CSV read failed: {e}")
+
+        elif src_kind == "MySQL table(s)":
+            # reuse helpers and UX to load profile & tables
+            mysql_envs_u = mysql_env_profiles()
+            mysql_saved_u = load_json_profiles(PROFILE_STORE_PATH_MYSQL)
+            mysql_defaults_u = _mysql_env_default()
+
+            c1, c2, c3 = st.columns([2, 1, 1])
+            with c1:
+                pick = st.selectbox("Load MySQL profile", ["(none)"] + [f"[env] {n}" for n in sorted(mysql_envs_u.keys())] +
+                                    [f"[saved] {n}" for n in sorted(mysql_saved_u.keys())], key="upload_mysql_pick_v2")
+            with c2:
+                if st.button("Load", use_container_width=True, key="upload_mysql_load_v2"):
+                    if pick.startswith("[env] "):
+                        name = pick.replace("[env] ", "", 1)
+                        st.session_state.upload_mysql_prof = mysql_envs_u.get(name, {})
+                        log(f"[Upload] Loaded MySQL env profile '{name}'")
+                    elif pick.startswith("[saved] "):
+                        name = pick.replace("[saved] ", "", 1)
+                        st.session_state.upload_mysql_prof = mysql_saved_u.get(name, {})
+                        log(f"[Upload] Loaded MySQL saved profile '{name}'")
+                    else:
+                        st.session_state.upload_mysql_prof = {}; log(f"[Upload] Cleared MySQL profile selection")
+            with c3:
+                if st.button("Test", use_container_width=True, key="upload_mysql_test_v2"):
+                    ok, msg = test_mysql_connection(st.session_state.get("upload_mysql_prof") or mysql_defaults_u)
+                    (st.success if ok else st.error)(msg)
+                    log(f"[Upload] MySQL test result: ok={ok}, msg='{msg}'")
+
+            p = st.session_state.get("upload_mysql_prof") or mysql_defaults_u
+            m1, m2, m3, m4, m5 = st.columns([2,1,1,1,1])
+            with m1:
+                u_host = st.text_input("Host", value=p.get("host",""), key="upload_mysql_host_v2")
+            with m2:
+                u_port = st.text_input("Port", value=str(p.get("port","3306")), key="upload_mysql_port_v2")
+            with m3:
+                u_user = st.text_input("User", value=p.get("user",""), key="upload_mysql_user_v2")
+            with m4:
+                sh = st.toggle("Show password", value=False, key="upload_mysql_showpwd_v2")
+                u_pwd = st.text_input("Password", value=p.get("password",""), type="default" if sh else "password", key="upload_mysql_pwd_v2")
+            with m5:
+                u_db = st.text_input("Database", value=p.get("db",""), key="upload_mysql_db_v2")
+
+            mysql_prof_for_upload = {"host": u_host, "port": u_port, "user": u_user, "password": u_pwd, "db": u_db}
+
+            # DEFAULT max rows now 30,000
+            lim1, lim2 = st.columns([2,1])
+            with lim1:
+                st.caption("You can load one table for single-mapping, or multiselect for batch.")
+                if st.button("List tables", key="upload_mysql_list_tables_v2"):
                     try:
-                        _save_mapped_csv(out_df, out_path)
-                        st.success(f"Saved → {out_path}")
+                        st.session_state.upload_mysql_tables = list_mysql_tables(mysql_prof_for_upload)
+                        st.success(f"Found {len(st.session_state.upload_mysql_tables)} tables.")
+                        log(f"[Upload] MySQL list tables: db='{u_db}', count={len(st.session_state.upload_mysql_tables)}")
                     except Exception as e:
-                        st.error(f"Failed to save: {e}")
-            with col_dl:
-                st.download_button(
-                    "Download mapped CSV",
-                    out_df.to_csv(index=False).encode("utf-8"),
-                    file_name=f"{fname}",
-                    mime="text/csv",
-                    key="upload_download_csv",
-                )
+                        st.error(f"Failed to list tables: {e}"); log(f"[Upload][ERROR] MySQL list tables failed: {e}")
+            with lim2:
+                lim_rows = st.number_input("Max rows", min_value=10, max_value=500000, value=30000, step=1000, key="upload_mysql_limit_v2")
 
-            st.info("Upload to CDF will be enabled next. This dry-run CSV will be the basis for the apply call.")
+            mysql_tables_loaded = st.session_state.get("upload_mysql_tables") or []
+            if mysql_tables_loaded:
+                # Multiselect tables for batch OR pick one for single
+                st.markdown("**Select table(s)**")
+                picked_tables = st.multiselect("MySQL table(s)", options=mysql_tables_loaded,
+                                               default=mysql_tables_loaded[:1], key="upload_mysql_tables_pick_v2")
+
+                # If exactly one table is chosen, show its preview for single-mapping flow
+                if picked_tables and len(picked_tables) == 1:
+                    tbl = picked_tables[0]
+                    try:
+                        df_source = read_mysql_table(mysql_prof_for_upload, tbl, limit=int(lim_rows))
+                        st.caption(f"Showing up to {len(df_source):,} rows from `{u_db}.{tbl}`")
+                        st.dataframe(df_source.head(50), use_container_width=True, height=300)
+                        log(f"[Upload] Read MySQL table (single preview): {u_db}.{tbl}, rows={len(df_source)}, limit={int(lim_rows)}")
+                    except Exception as e:
+                        st.error(f"Failed to read table: {e}"); log(f"[Upload][ERROR] Read MySQL table failed: {e}")
+
+        else:  # Combined (from previous tab)
+            if isinstance(st.session_state.get("combined_df"), pd.DataFrame) and not st.session_state.combined_df.empty:
+                df_source = st.session_state.combined_df.copy()
+                st.info(f"Using combined dataset from Connect & Download: {len(df_source):,} rows, {len(df_source.columns)} columns.")
+                st.dataframe(df_source.head(50), use_container_width=True, height=300)
+                log(f"[Upload] Using combined dataset: rows={len(df_source)}, cols={len(df_source.columns)}")
+            else:
+                st.warning("No combined data found. Fetch data in **Connect & Download** first.")
+                log("[Upload] Combined dataset not available")
+
+        st.divider()
+
+        # ---------- SINGLE mapping UI (manual mapping + dry-run + upload) ----------
+        st.subheader("Single mapping")
+        st.caption("Use this to configure one source payload → one target View with manual mapping and dry-run.")
+
+        # For single mapping, require exactly one target view selected
+        single_view_ok = have_single_view
+        if not single_view_ok:
+            st.info("Pick exactly one **Target View** above to use single-mapping.")
+        else:
+            view_choice_single = selected_views_u[0]
+            view_eid_u, view_ver_u = view_choice_single.rsplit(" v", 1)
+
+            # Build df_source and props if we have a source
+            if df_source is None or df_source.empty:
+                st.info("Choose/Load a source first.")
+            else:
+                # read view properties
+                try:
+                    props = _get_view_properties(client, space_u, view_eid_u, view_ver_u)
+                    log(f"[Upload] (single) Loaded view properties: view='{view_eid_u}' v{view_ver_u}, props={len(props)}")
+                except Exception as e:
+                    st.error(f"Failed to read view schema: {e}"); log(f"[Upload][ERROR] (single) Read view schema failed: {e}")
+                    props = []
+
+                if props:
+                    # external_id handling (DEFAULT: use external_id column if present)
+                    st.markdown("**Node identifier (external_id)**")
+                    default_mode = "Use a column" if "external_id" in [c.lower() for c in df_source.columns] else "Generate"
+                    id_mode = st.radio("How to set `external_id`?",
+                                       ["Use a column", "Generate"],
+                                       horizontal=True, key="upload_id_mode_single",
+                                       index=(0 if default_mode == "Use a column" else 1))
+                    external_id_series = None
+                    if id_mode == "Use a column":
+                        # preselect the real column named (case-insensitive) external_id if it exists
+                        cols_ci = {c.lower(): c for c in df_source.columns}
+                        preselect_col = cols_ci.get("external_id")
+                        id_col = st.selectbox("Column for external_id", options=list(df_source.columns),
+                                              index=(list(df_source.columns).index(preselect_col) if preselect_col in df_source.columns else 0),
+                                              key="upload_id_col_single")
+                        external_id_series = df_source[id_col].astype(str)
+                    else:
+                        prefix = st.text_input("Generated external_id prefix", value=f"{view_eid_u}_", key="upload_id_prefix_single")
+                        external_id_series = pd.Series([f"{prefix}{i+1}" for i in range(len(df_source))], index=df_source.index, dtype="string")
+
+                    # property mapping table
+                    auto_map = _auto_map_columns(df_source, props)
+                    st.markdown("**Property mappings** (skip any you don't want to set)")
+                    mapped: Dict[str, Optional[str]] = {}
+                    cols_map = st.columns(2)
+                    for i, p in enumerate(sorted(props)):
+                        with cols_map[i % 2]:
+                            options = ["(skip)"] + list(df_source.columns)
+                            default_idx = 0
+                            if p in auto_map:
+                                try:
+                                    default_idx = 1 + list(df_source.columns).index(auto_map[p])
+                                except ValueError:
+                                    default_idx = 0
+                            mapped[p] = st.selectbox(f"{p}", options=options, index=default_idx, key=f"upload_map_single_{p}")
+
+                    # preview / dry-run
+                    if st.button("Dry-run mapping", type="primary", key="upload_dryrun_single"):
+                        included_props = [p for p, c in mapped.items() if c and c != "(skip)"]
+                        if not included_props:
+                            st.warning("No properties selected to map."); log("[Upload] (single) Dry-run aborted: 0 properties mapped")
+                        else:
+                            out_df = pd.DataFrame(index=df_source.index)
+                            out_df["external_id"] = external_id_series.astype(str)
+                            for p in included_props:
+                                out_df[p] = df_source[mapped[p]]
+
+                            # ✨ persist for the upload step
+                            st.session_state["upload_out_df"] = out_df
+                            st.session_state["upload_target"] = {"space": space_u, "view_eid": view_eid_u, "view_ver": str(view_ver_u)}
+
+                            empties = out_df["external_id"].astype(str).str.len() == 0
+                            if empties.any():
+                                st.warning(f"{int(empties.sum())} row(s) have empty external_id and will fail to upsert.")
+
+                            st.success(f"Prepared {len(out_df):,} rows with {len(included_props)} mapped properties.")
+                            st.dataframe(out_df.head(50), use_container_width=True, height=320)
+                            log(f"[Upload] (single) Dry-run prepared: rows={len(out_df)}, props_mapped={len(included_props)}, "
+                                f"id_mode='{id_mode}', empty_ids={int(empties.sum()) if 'empties' in locals() else 0}, "
+                                f"target={space_u}:{view_eid_u} v{view_ver_u}")
+
+                            # Save-to-volume & download
+                            fname = f"cdf_upload_{space_u}_{view_eid_u}_v{view_ver_u}.csv".replace("/", "-")
+                            out_path = Path("/data/uploads") / fname
+                            col_save, col_dl = st.columns([1,1])
+                            with col_save:
+                                if st.button("Save mapped CSV to /data/uploads", key="upload_save_csv_single"):
+                                    try:
+                                        _save_mapped_csv(out_df, out_path)
+                                        st.success(f"Saved → {out_path}"); log(f"[Upload] (single) Saved mapped CSV: {out_path}")
+                                    except Exception as e:
+                                        st.error(f"Failed to save: {e}"); log(f"[Upload][ERROR] (single) Save CSV failed: {e}")
+                            with col_dl:
+                                st.download_button(
+                                    "Download mapped CSV",
+                                    out_df.to_csv(index=False).encode("utf-8"),
+                                    file_name=f"{fname}",
+                                    mime="text/csv",
+                                    key="upload_download_csv_single",
+                                )
+
+                # --- Upload (single, uses last dry-run result) ---
+                if st.session_state.get("upload_out_df") is not None and st.session_state.get("upload_target"):
+                    st.caption("Upload uses the mapped payload from the dry-run above.")
+                    sync_delete_missing_single = st.checkbox(
+                        "Sync mode: delete existing nodes in the target View that are **not** present in this payload (by `external_id`)",
+                        value=False,
+                        key="upload_sync_single",
+                        help="Dangerous: will remove nodes not included here before uploading."
+                    )
+                    batch_size_single = st.number_input("Batch size (single)", min_value=100, max_value=5000, value=1000, step=100, key="upload_batch_single")
+                    confirm_single = st.checkbox("I understand this will write data into CDF (single).", value=False, key="upload_confirm_single")
+                    if st.button("Upload mapped rows to CDF (single)", type="primary", disabled=not confirm_single, key="upload_go_single"):
+                        out_df = st.session_state["upload_out_df"].copy()
+                        tgt = st.session_state["upload_target"]
+                        space_s = tgt["space"]; view_eid_s = tgt["view_eid"]; view_ver_s = tgt["view_ver"]
+                        try:
+                            view_id = dm.ViewId(space=space_s, external_id=view_eid_s, version=str(view_ver_s))
+
+                            # optional sync delete
+                            if sync_delete_missing_single:
+                                log(f"[Upload] (single) Sync mode: fetching existing external_ids for {space_s}:{view_eid_s} v{view_ver_s}")
+                                existing_ids: set[str] = set()
+                                for inst in client.data_modeling.instances.list(instance_type="node", sources=[view_id], limit=None):
+                                    eid = getattr(inst, "external_id", None)
+                                    if eid:
+                                        existing_ids.add(str(eid))
+                                payload_ids = set(out_df["external_id"].astype(str).tolist())
+                                to_delete = sorted(existing_ids - payload_ids)
+                                log(f"[Upload] (single) Sync diff: existing={len(existing_ids)}, payload={len(payload_ids)}, to_delete={len(to_delete)}")
+                                if to_delete:
+                                    del_prog = st.progress(0, text="Deleting nodes not in payload…")
+                                    for i in range(0, len(to_delete), 1000):
+                                        chunk = to_delete[i:i+1000]
+                                        try:
+                                            client.data_modeling.instances.delete(
+                                                nodes=[dm.NodeId(space=space_s, external_id=e) for e in chunk]
+                                            )
+                                            log(f"[Upload] (single) Deleted nodes {i+1}-{min(i+1000, len(to_delete))}")
+                                        except Exception as e:
+                                            log(f"[Upload][ERROR] (single) Delete batch {i+1}-{min(i+1000, len(to_delete))} failed: {e}")
+                                        finally:
+                                            del_prog.progress(min(1.0, (i+1000)/max(len(to_delete),1)))
+
+                            # build NodeApply list
+                            nodes = []
+                            prop_cols = [c for c in out_df.columns if c != "external_id"]
+                            for _, row in out_df.iterrows():
+                                ext_id = str(row["external_id"])
+                                props = {c: (None if pd.isna(row[c]) else row[c]) for c in prop_cols}
+                                nodes.append(
+                                    dm.NodeApply(
+                                        space=space_s,
+                                        external_id=ext_id,
+                                        sources=[dm.NodeOrEdgeData(source=view_id, properties=props)],
+                                    )
+                                )
+
+                            total = len(nodes)
+                            log(f"[Upload] (single) Start upload: total={total}, batch={int(batch_size_single)}, target={space_s}:{view_eid_s} v{view_ver_s}")
+                            prog = st.progress(0, text="Uploading…")
+                            errs: List[str] = []
+                            for i in range(0, total, int(batch_size_single)):
+                                start = i + 1
+                                end = min(i + int(batch_size_single), total)
+                                batch = nodes[i:end]
+                                try:
+                                    client.data_modeling.instances.apply(nodes=batch)
+                                    log(f"[Upload] (single) Batch applied: rows {start}-{end}")
+                                except Exception as e:
+                                    msg = f"Rows {start}-{end}: {e}"
+                                    errs.append(msg); log(f"[Upload][ERROR] (single) {msg}")
+                                finally:
+                                    prog.progress(min(1.0, end / max(total, 1)))
+
+                            if errs:
+                                st.error("Finished with errors:\n" + "\n".join(errs[:10]) + ("\n… (more)" if len(errs) > 10 else ""))
+                                log(f"[Upload] (single) Completed with errors: batches_with_errors={len(errs)}")
+                            else:
+                                st.success(f"Uploaded {total} node(s) to {space_s}:{view_eid_s} v{view_ver_s}.")
+                                log(f"[Upload] (single) Completed successfully: total={total}")
+                        except Exception as e:
+                            st.error(f"Upload failed: {e}"); log(f"[Upload][ERROR] (single) Upload failed: {e}")
+
+        st.divider()
+
+        # ---------- BATCH mode (multi: MySQL tables ↔ multiple Views, auto-mapped) ----------
+        st.subheader("Batch upload (auto-map)")
+        st.caption("Select **multiple MySQL tables** and **multiple Views**. We’ll auto-map by exact name (case-insensitive) and use `external_id` column by default if present, else generate.")
+
+        can_batch = (src_kind == "MySQL table(s)") and bool(mysql_prof_for_upload) and bool(st.session_state.get("upload_mysql_tables_pick_v2"))
+        if not have_any_views:
+            st.info("Pick one or more **Target View(s)** above to use batch upload.")
+        elif not (src_kind == "MySQL table(s)"):
+            st.info("Batch mode currently supports **MySQL table(s)** sources.")
+        elif not can_batch:
+            st.info("Select at least one MySQL table above (in the MySQL section).")
+        else:
+            picked_tables = st.session_state.get("upload_mysql_tables_pick_v2") or []
+            pairing_mode = "Zip tables ↔ views" if len(picked_tables) == len(selected_views_u) and len(picked_tables) > 1 else "All tables → first selected view"
+            pairing = st.selectbox("Pairing strategy", ["Zip tables ↔ views", "All tables → first selected view"], index=(0 if pairing_mode=="Zip tables ↔ views" else 1), key="upload_batch_pairing")
+
+            sync_delete_missing_batch = st.checkbox(
+                "Sync mode for each mapping: delete existing nodes not in the table payload (by `external_id`)",
+                value=False,
+                key="upload_sync_batch",
+                help="Dangerous: before upload, will remove nodes not present in that table's payload for the target View."
+            )
+            batch_size_multi = st.number_input("Batch size (each mapping)", min_value=100, max_value=5000, value=1000, step=100, key="upload_batch_multi")
+            confirm_multi = st.checkbox("I understand this will write data into CDF (batch).", value=False, key="upload_confirm_multi")
+
+            if st.button("Run batch upload (auto-map)", type="primary", disabled=not confirm_multi, key="upload_go_batch"):
+                try:
+                    # Build mapping pairs (table -> view)
+                    if pairing == "Zip tables ↔ views":
+                        if len(picked_tables) != len(selected_views_u):
+                            st.error("Zip requires the same number of tables and views."); log("[Upload][batch] Zip failed: count mismatch")
+                            st.stop()
+                        pairs = list(zip(picked_tables, selected_views_u))
+                    else:
+                        # all tables to first selected view
+                        if not selected_views_u:
+                            st.error("No target view selected."); log("[Upload][batch] No views selected")
+                            st.stop()
+                        pairs = [(t, selected_views_u[0]) for t in picked_tables]
+
+                    total_pairs = len(pairs)
+                    st.info(f"Batch mappings: {total_pairs}")
+                    overall_prog = st.progress(0, text="Batch progress…")
+                    errs_global: List[str] = []
+                    engine_msg = f"{mysql_prof_for_upload.get('host')}:{mysql_prof_for_upload.get('port')}/{mysql_prof_for_upload.get('db')}"
+                    log(f"[Upload][batch] Start: pairs={total_pairs}, mysql={engine_msg}, max_rows={int(st.session_state.get('upload_mysql_limit_v2', 30000))}")
+
+                    # Iterate pairs
+                    for idx, (tbl, view_choice) in enumerate(pairs, start=1):
+                        try:
+                            # read table
+                            limit_rows = int(st.session_state.get("upload_mysql_limit_v2", 30000))
+                            df_tbl = read_mysql_table(mysql_prof_for_upload, tbl, limit=limit_rows)
+
+                            # extract target view parts
+                            v_eid, v_ver = view_choice.rsplit(" v", 1)
+                            v_props = _get_view_properties(client, space_u, v_eid, v_ver)
+
+                            # external_id default: use 'external_id' column if present
+                            cols_ci = {c.lower(): c for c in df_tbl.columns}
+                            if "external_id" in cols_ci:
+                                ext_ids = df_tbl[cols_ci["external_id"]].astype(str)
+                            else:
+                                prefix = f"{v_eid}_"
+                                ext_ids = pd.Series([f"{prefix}{i+1}" for i in range(len(df_tbl))], index=df_tbl.index, dtype="string")
+
+                            # auto map properties present in table
+                            amap = _auto_map_columns(df_tbl, v_props)
+                            included_props = list(amap.keys())
+                            out_df = pd.DataFrame(index=df_tbl.index)
+                            out_df["external_id"] = ext_ids.astype(str)
+                            for p in included_props:
+                                out_df[p] = df_tbl[amap[p]]
+
+                            # optional sync delete
+                            view_id = dm.ViewId(space=space_u, external_id=v_eid, version=str(v_ver))
+                            if sync_delete_missing_batch:
+                                existing_ids: set[str] = set()
+                                for inst in client.data_modeling.instances.list(instance_type="node", sources=[view_id], limit=None):
+                                    eid = getattr(inst, "external_id", None)
+                                    if eid:
+                                        existing_ids.add(str(eid))
+                                payload_ids = set(out_df["external_id"].astype(str).tolist())
+                                to_delete = sorted(existing_ids - payload_ids)
+                                if to_delete:
+                                    log(f"[Upload][batch] {idx}/{total_pairs} Sync delete: {len(to_delete)} nodes for {space_u}:{v_eid} v{v_ver}")
+                                    for j in range(0, len(to_delete), 1000):
+                                        chunk = to_delete[j:j+1000]
+                                        try:
+                                            client.data_modeling.instances.delete(
+                                                nodes=[dm.NodeId(space=space_u, external_id=e) for e in chunk]
+                                            )
+                                        except Exception as e:
+                                            errs_global.append(f"[{tbl} → {v_eid}] delete {j+1}-{min(j+1000,len(to_delete))}: {e}")
+
+                            # build nodes and upload in batches
+                            nodes = []
+                            prop_cols = [c for c in out_df.columns if c != "external_id"]
+                            for _, row in out_df.iterrows():
+                                ext_id = str(row["external_id"])
+                                props = {c: (None if pd.isna(row[c]) else row[c]) for c in prop_cols}
+                                nodes.append(
+                                    dm.NodeApply(
+                                        space=space_u,
+                                        external_id=ext_id,
+                                        sources=[dm.NodeOrEdgeData(source=view_id, properties=props)],
+                                    )
+                                )
+
+                            total = len(nodes)
+                            log(f"[Upload][batch] {idx}/{total_pairs} Upload start: table='{tbl}', rows={total}, view='{v_eid}' v{v_ver}")
+                            for k in range(0, total, int(batch_size_multi)):
+                                start = k + 1
+                                end = min(k + int(batch_size_multi), total)
+                                batch = nodes[k:end]
+                                try:
+                                    client.data_modeling.instances.apply(nodes=batch)
+                                except Exception as e:
+                                    errs_global.append(f"[{tbl} → {v_eid}] rows {start}-{end}: {e}")
+
+                            log(f"[Upload][batch] {idx}/{total_pairs} Upload done: table='{tbl}' → view='{v_eid}' ({total} rows)")
+                        except Exception as e:
+                            errs_global.append(f"[{tbl}] failed: {e}")
+                        finally:
+                            overall_prog.progress(min(1.0, idx / max(total_pairs, 1)))
+
+                    if errs_global:
+                        st.error("Batch finished with errors:\n" + "\n".join(errs_global[:12]) + ("\n… (more)" if len(errs_global) > 12 else ""))
+                        log(f"[Upload][batch] Completed with errors: {len(errs_global)} issue(s)")
+                    else:
+                        st.success(f"Batch complete: {total_pairs} mapping(s) executed.")
+                        log(f"[Upload][batch] Completed successfully: pairs={total_pairs}")
+                except Exception as e:
+                    st.error(f"Batch failed: {e}"); log(f"[Upload][ERROR][batch] {e}")
+# endregion DataMosaix Upload
 
 
+# region Logs
 # ------------------------ Logs ------------------------
 with tabs[4]:
     st.header("Logs")
     log_text = "\n".join(st.session_state.logs[-500:]) if st.session_state.logs else "No logs yet."
     st.text_area("Activity", value=log_text, height=240, label_visibility="collapsed")
+# endregion Logs
 
+
+# region About
 # ------------------------ About ------------------------
 with tabs[5]:
     st.header("About")
@@ -1632,3 +2001,4 @@ with tabs[5]:
             st.markdown(f.read())
     except FileNotFoundError:
         st.info("Changelog not bundled in this image. Add `COPY CHANGELOG.md ./` to your Dockerfile or bind-mount the project.")
+# endregion About
