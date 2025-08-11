@@ -6,7 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
-
+- AI demo-data generator: create synthetic rows from fetched Views (new **AI Demo Data** tab, per-view config, seed option). *(in progress)*
 
 ### Changed
 
