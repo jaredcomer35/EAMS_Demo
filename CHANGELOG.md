@@ -6,12 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
-- AI demo-data generator: create synthetic rows from fetched Views (new **AI Demo Data** tab, per-view config, seed option). *(in progress)*
+- **MySQL Table Viewer**: Data Explorer tab now connects to any MySQL DB, lists tables, lets you select one or more, view one at a time with fast filtering, and download filtered CSV.
+- Profile management: Save/load MySQL viewer profiles (persisted to `/data/mysql_profiles.json`), plus quick “Test connection”.
+- Per-column filter operators in Data Explorer: **Equals**, **Not Equals**, **Contains**, **Not Contains**, plus **Range** for numerics and **Between/On/Not on** for dates.
+- Basic dataset statistics panel in Data Explorer showing:
+  - Number of unique values per column.
+  - Row counts per value for categorical columns (e.g., per plant).
+  - Summary statistics (mean, min, max, std) for numeric columns.
 
 ### Changed
-
+- AI Demo Data: Path transformation now **only replaces the server name** and preserves the original IP address and remaining segments (e.g., `MSDUNL...\\10.4.10.207\\...` → `<NewServer>\\10.4.10.207\\...`).
 
 ### Fixed
+
+### Notes
+- `OPENAI_API` (preferred) or `OPENAI_API_KEY` is read when using AI naming in the “AI Demo Data” tab; if missing, heuristics are used.
 
 
 ## [1.1.0] - 2025-08-11
