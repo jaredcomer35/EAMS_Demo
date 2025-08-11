@@ -23,7 +23,7 @@ from sqlalchemy.exc import OperationalError
 # ============================================================
 # Version / Branding
 # ============================================================
-APP_VERSION = "1.2.0-dev"  # bump to 1.2.0 on release
+APP_VERSION = "1.2.0"  # bump to 1.2.0 on release
 APP_TITLE = "Convergix DataMosaix View Explorer"
 APP_ICON_PATH = "assets/convergix_logo.png"
 
