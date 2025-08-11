@@ -6,10 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- (WIP) **DataMosaix Upload** tab to write data from CSV/MySQL into CDF Data Modeling Views with column-to-property mapping, dry-run validation, and batch apply.
 
 ### Changed
+- (placeholder)
 
 ### Fixed
+- (placeholder)
 
 ### Notes
 

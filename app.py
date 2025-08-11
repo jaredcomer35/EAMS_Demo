@@ -23,7 +23,7 @@ from sqlalchemy.exc import OperationalError
 # ============================================================
 # Version / Branding
 # ============================================================
-APP_VERSION = "1.2.0"  # bump to 1.2.0 on release
+APP_VERSION = "1.3.0 - dev"  # bump to 1.3.0 on release
 APP_TITLE = "Convergix DataMosaix View Explorer"
 APP_ICON_PATH = "assets/convergix_logo.png"
 
@@ -730,7 +730,7 @@ ss.setdefault("viewer_current_table", None)
 # ============================================================
 # Tabs
 # ============================================================
-tabs = st.tabs(["🔌 Connect & Download", "📊 Data Explorer", "🤖 AI Demo Data", "🪵 Logs", "ℹ️ About"])
+tabs = st.tabs(["🔌 Connect & Download", "📊 Data Explorer", "🤖 AI Demo Data", "⬆️ DataMosaix Upload", "🪵 Logs", "ℹ️ About"])
 
 # ------------------------ Connect & Download ------------------------
 with tabs[0]:
@@ -1355,14 +1355,27 @@ with tabs[2]:
             st.error(f"Failed: {e}")
             log(f"ERROR write demo: {e}")
 
-# ------------------------ Logs ------------------------
+# ------------------------ Data Mosaix Upload ------------------------
 with tabs[3]:
+    st.header("DataMosaix Upload (WIP)")
+    st.info("This feature will let you upload rows from CSV / MySQL tables into a selected Data Model View in DataMosaix (CDF).")
+    st.markdown("""
+    **Planned flow**
+    1. Pick target **Space → Data Model → View**.
+    2. Choose source: **CSV upload**, **MySQL table**, or **Combined data** fetched earlier.
+    3. **Map columns → properties** (with presets for common names).
+    4. **Dry-run** validation (show would-be writes / diffs).
+    5. **Batch apply** (nodes/edges) with progress + error report.
+    """)
+
+# ------------------------ Logs ------------------------
+with tabs[4]:
     st.header("Logs")
     log_text = "\n".join(st.session_state.logs[-500:]) if st.session_state.logs else "No logs yet."
     st.text_area("Activity", value=log_text, height=240, label_visibility="collapsed")
 
 # ------------------------ About ------------------------
-with tabs[4]:
+with tabs[5]:
     st.header("About")
     st.caption(f"Version {APP_VERSION}")
     st.subheader("Changelog")
