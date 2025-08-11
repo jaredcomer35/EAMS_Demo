@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+
+
+### Changed
+
+
+### Fixed
+
+
+## [1.1.0] - 2025-08-11
+### Added
 - **Multiselect Views**: choose multiple Views at once and fetch them in a single run.
 - **Combined/Per-View browsing**: Data Explorer lets you switch between **All views (combined)** or a specific view from a dropdown.
 - **Per-view MySQL mapping**: set a **table name per View**; commit **current view (optionally filtered)** or **ALL views** (each to its own table).
@@ -67,7 +77,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 
 ## Links
-[Unreleased]: https://github.com/jaredcomer35/EAMS_Demo/compare/v1.0.0...HEAD  
+[Unreleased]: https://github.com/jaredcomer35/EAMS_Demo/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/jaredcomer35/EAMS_Demo/compare/v1.0.0...v1.1.0   
 [1.0.0]: https://github.com/jaredcomer35/EAMS_Demo/compare/v0.1.1...v1.0.0  
 [0.1.1]: https://github.com/jaredcomer35/EAMS_Demo/compare/v0.1.0...v0.1.1  
 [0.1.0]: https://github.com/jaredcomer35/EAMS_Demo/releases/tag/v0.1.0

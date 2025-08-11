@@ -17,7 +17,7 @@ from sqlalchemy.engine import URL
 from sqlalchemy.exc import OperationalError
 
 # ---------- Versioning ----------
-APP_VERSION = "1.1.0-dev"  # feature/multiselect-views
+APP_VERSION = "1.1.0"  # feature/multiselect-views
 __version__ = APP_VERSION
 
 # ---------- Branding ----------
