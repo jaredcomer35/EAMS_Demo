@@ -6,16 +6,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
-- (placeholder) Append mode for MySQL commits.
-- (placeholder) Primary key selection & indexing.
-- (placeholder) Encryption-at-rest for saved profiles via Docker secrets.
-- (placeholder) Admin page for managing saved profiles.
 
 ### Changed
-- (placeholder) Improve large table rendering performance.
 
 ### Fixed
-- (placeholder) Minor UI polish and error message clarity.
+
+
+## [1.0.0] - 2025-08-11
+### Added
+- **Initial stable release (V1)**: version header shows `v1.0.0`; CHANGELOG visible in the app’s **About** tab.
+- Documented branching workflow (feature branches, PRs, tags) and release steps.
+
+### Changed
+- Set **main** as the default branch and tagged `v1.0.0` as the baseline for future compares.
+
+### Fixed
+- N/A
+
 
 ## [0.1.1] - 2025-08-11
 ### Added
@@ -28,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Minor robustness tweaks while loading the logo (won’t break the app if the file is missing).
+
 
 ## [0.1.0] - 2025-08-11
 ### Added
@@ -53,17 +61,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## Release process
-1. Update `APP_VERSION` in `app.py` (e.g., `0.1.2`).  
-2. Add a new section under **[Unreleased]** → move entries into **[x.y.z] - YYYY-MM-DD**.  
-3. Commit changes and tag the release (`git tag vX.Y.Z`; `git push --tags`).  
-4. (Optional) Update compare links below.
-
 ## Links
-> If you host this in GitHub/GitLab, you can wire compare links like:
->
-> ```text
-> [Unreleased]: https://github.com/ORG/REPO/compare/v0.1.1...HEAD
-> [0.1.1]: https://github.com/ORG/REPO/releases/tag/v0.1.1
-> [0.1.0]: https://github.com/ORG/REPO/releases/tag/v0.1.0
-> ```
+[Unreleased]: https://github.com/jaredcomer35/EAMS_Demo/compare/v1.0.0...HEAD  
+[1.0.0]: https://github.com/jaredcomer35/EAMS_Demo/compare/v0.1.1...v1.0.0  
+[0.1.1]: https://github.com/jaredcomer35/EAMS_Demo/compare/v0.1.0...v0.1.1  
+[0.1.0]: https://github.com/jaredcomer35/EAMS_Demo/releases/tag/v0.1.0

@@ -17,7 +17,7 @@ from sqlalchemy.engine import URL
 from sqlalchemy.exc import OperationalError
 
 # ---------- Versioning ----------
-APP_VERSION = "0.1.1"  # bump this when we ship changes
+APP_VERSION = "1.0.0"  # bump this when we ship changes
 __version__ = APP_VERSION
 
 # ---------- Branding ----------
