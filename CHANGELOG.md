@@ -6,11 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- **Multiselect Views**: choose multiple Views at once and fetch them in a single run.
+- **Combined/Per-View browsing**: Data Explorer lets you switch between **All views (combined)** or a specific view from a dropdown.
+- **Per-view MySQL mapping**: set a **table name per View**; commit **current view (optionally filtered)** or **ALL views** (each to its own table).
+- Session stores a DataFrame **per view** (keyed `eid@version`) plus a **combined** union.
+- CSV download for the combined result.
 
 ### Changed
+- Fetch button now loops over selected views; default table names auto-suggested from view IDs.
+- Clear data resets all cached views, combined frame, and table-name mappings.
 
 ### Fixed
-
+- Safer handling when no views are selected or a view returns zero rows.
 
 ## [1.0.0] - 2025-08-11
 ### Added
@@ -23,7 +30,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - N/A
 
-
 ## [0.1.1] - 2025-08-11
 ### Added
 - **About tab** that renders `CHANGELOG.md` inside the app and shows the running app version.
@@ -35,7 +41,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Minor robustness tweaks while loading the logo (won’t break the app if the file is missing).
-
 
 ## [0.1.0] - 2025-08-11
 ### Added

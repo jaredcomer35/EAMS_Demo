@@ -17,12 +17,12 @@ from sqlalchemy.engine import URL
 from sqlalchemy.exc import OperationalError
 
 # ---------- Versioning ----------
-APP_VERSION = "1.0.0"  # bump this when we ship changes
+APP_VERSION = "1.1.0-dev"  # feature/multiselect-views
 __version__ = APP_VERSION
 
 # ---------- Branding ----------
 APP_TITLE = "Convergix DataMosaix View Explorer"
-APP_ICON_PATH = "assets/convergix_logo.png"   # updated to PNG
+APP_ICON_PATH = "assets/convergix_logo.png"
 _icon = None
 try:
     _icon = Image.open(APP_ICON_PATH)
@@ -38,15 +38,18 @@ with left:
         st.image(_icon, width=60)
 with right:
     st.title(APP_TITLE)
-    st.caption(f"Version {APP_VERSION}")
+    st.caption(f"Version {APP_VERSION} (multiselect views)")
+
 
 # ---------- Utilities ----------
 def _env(name: str, default: str = "") -> str:
     return (os.getenv(name, default) or "").strip()
 
+
 def log(msg: str):
     st.session_state.setdefault("logs", [])
     st.session_state.logs.append(msg)
+
 
 def flatten_properties_from_instance(inst) -> Dict[str, Any]:
     props_obj = getattr(inst, "properties", None)
@@ -87,14 +90,17 @@ def flatten_properties_from_instance(inst) -> Dict[str, Any]:
         pass
     return {}
 
+
 # ---------- Profile storage (persisted on disk) ----------
 PROFILE_STORE_PATH_CDF = _env("PROFILE_STORE_PATH", "/data/profiles.json")
 PROFILE_STORE_PATH_MYSQL = _env("MYSQL_PROFILE_STORE_PATH", "/data/mysql_profiles.json")
+
 
 def _path(p: str) -> Path:
     pp = Path(p)
     pp.parent.mkdir(parents=True, exist_ok=True)
     return pp
+
 
 def load_json_profiles(path: str) -> Dict[str, Dict[str, str]]:
     file = _path(path)
@@ -108,11 +114,13 @@ def load_json_profiles(path: str) -> Dict[str, Dict[str, str]]:
             pass
     return {}
 
+
 def save_json_profile(path: str, name: str, profile: Dict[str, str]):
     data = load_json_profiles(path)
     data[name] = profile
     with _path(path).open("w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
+
 
 def delete_json_profile(path: str, name: str):
     data = load_json_profiles(path)
@@ -121,18 +129,9 @@ def delete_json_profile(path: str, name: str):
         with _path(path).open("w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
 
+
 # ---------- Env-group profiles ----------
 def env_profiles(prefix_list_var: str = "DATAMOSAIX_PROFILES", var_prefix: str = "DMX_") -> Dict[str, Dict[str, str]]:
-    """
-    Supports grouped creds in .env like:
-      DATAMOSAIX_PROFILES=prod,qa
-      DMX_PROD_HOST=...
-      DMX_PROD_PROJECT=...
-      DMX_PROD_TOKENURL=...
-      DMX_PROD_CLIENTID=...
-      DMX_PROD_CLIENTSECRET=...
-      DMX_PROD_SCOPES=user_impersonation
-    """
     names = [n.strip() for n in _env(prefix_list_var, "").split(",") if n.strip()]
     profiles: Dict[str, Dict[str, str]] = {}
     for n in names:
@@ -150,16 +149,8 @@ def env_profiles(prefix_list_var: str = "DATAMOSAIX_PROFILES", var_prefix: str =
             profiles[n] = prof
     return profiles
 
+
 def mysql_env_profiles(prefix_list_var: str = "MYSQL_PROFILES", var_prefix: str = "MYSQL_") -> Dict[str, Dict[str, str]]:
-    """
-    .env example:
-      MYSQL_PROFILES=local,prod
-      MYSQL_LOCAL_HOST=host.docker.internal
-      MYSQL_LOCAL_PORT=3306
-      MYSQL_LOCAL_USER=root
-      MYSQL_LOCAL_PASSWORD=super@secret!
-      MYSQL_LOCAL_DB=EAMS_Demo
-    """
     names = [n.strip() for n in _env(prefix_list_var, "").split(",") if n.strip()]
     profiles: Dict[str, Dict[str, str]] = {}
     for n in names:
@@ -175,6 +166,7 @@ def mysql_env_profiles(prefix_list_var: str = "MYSQL_PROFILES", var_prefix: str 
         if prof["host"] and prof["user"] and prof["db"]:
             profiles[n] = prof
     return profiles
+
 
 # ---------- Cognite client ----------
 def build_client(host_url: str, project: str, token_url: str, client_id: str, client_secret: str, scopes_csv: str) -> CogniteClient:
@@ -193,16 +185,19 @@ def build_client(host_url: str, project: str, token_url: str, client_id: str, cl
     cfg = ClientConfig(client_name=project, project=project, credentials=creds, base_url=host_url)
     return CogniteClient(cfg)
 
+
 # ---------- Cached calls (ignore client in hash via leading underscore) ----------
 @st.cache_data(show_spinner=False)
 def list_spaces(_client: CogniteClient, conn_key: str) -> List[str]:
     models = _client.data_modeling.data_models.list(limit=None, all_versions=False)
     return sorted({m.space for m in models})
 
+
 @st.cache_data(show_spinner=False)
 def list_models_latest(_client: CogniteClient, conn_key: str, space: str) -> List[Tuple[str, str]]:
     models = _client.data_modeling.data_models.list(limit=None, all_versions=False)
     return [(m.external_id, str(m.version)) for m in models if m.space == space]
+
 
 @st.cache_data(show_spinner=False)
 def list_views_for_model(_client: CogniteClient, conn_key: str, space: str, dm_eid: str, dm_ver: str) -> List[Tuple[str, str]]:
@@ -214,6 +209,7 @@ def list_views_for_model(_client: CogniteClient, conn_key: str, space: str, dm_e
     if not getattr(model, "views", None):
         return []
     return [(v.external_id, str(v.version)) for v in model.views]
+
 
 @st.cache_data(show_spinner=True)
 def fetch_view_dataframe(_client: CogniteClient, conn_key: str, space: str, dm_eid: str, dm_ver: str, view_eid: str, view_ver: str, max_rows: Optional[int]) -> pd.DataFrame:
@@ -235,7 +231,11 @@ def fetch_view_dataframe(_client: CogniteClient, conn_key: str, space: str, dm_e
         rows.append(row)
         if max_rows and (i + 1) >= max_rows:
             break
-    return pd.DataFrame(rows, columns=columns)
+    df = pd.DataFrame(rows, columns=columns)
+    df["__view__"] = view_eid
+    df["__view_version__"] = str(view_ver)
+    return df
+
 
 def filter_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     with st.expander("Filters", expanded=False):
@@ -277,6 +277,7 @@ def filter_dataframe(df: pd.DataFrame) -> pd.DataFrame:
                         filtered = filtered[s.astype(str).str.contains(txt, case=False, na=False)]
     return filtered
 
+
 # ---------- MySQL helpers ----------
 def _mysql_env_default() -> Dict[str, str]:
     return {
@@ -287,11 +288,13 @@ def _mysql_env_default() -> Dict[str, str]:
         "db": _env("MYSQL_DB", ""),
     }
 
+
 def _sanitize_table_name(name: str) -> str:
     import re
     s = (name or "cdf_view").strip().lower()
     s = re.sub(r"[^0-9a-zA-Z_]", "_", s)
     return s or "cdf_view"
+
 
 def _mysql_engine_from_profile(prof: Dict[str, str]):
     url = URL.create(
@@ -305,6 +308,7 @@ def _mysql_engine_from_profile(prof: Dict[str, str]):
     )
     return create_engine(url, pool_pre_ping=True)
 
+
 def test_mysql_connection(prof: Dict[str, str]) -> Tuple[bool, str]:
     try:
         engine = _mysql_engine_from_profile(prof)
@@ -315,6 +319,7 @@ def test_mysql_connection(prof: Dict[str, str]) -> Tuple[bool, str]:
         return False, f"OperationalError: {oe.orig}"
     except Exception as e:
         return False, f"Error: {e}"
+
 
 def commit_dataframe_to_mysql(df: pd.DataFrame, table_name: str, prof: Dict[str, str]) -> int:
     if df is None:
@@ -331,16 +336,21 @@ def commit_dataframe_to_mysql(df: pd.DataFrame, table_name: str, prof: Dict[str,
         )
     return len(df)
 
+
 # ---------- Session state ----------
-if "client" not in st.session_state: st.session_state.client = None
-if "conn_key" not in st.session_state: st.session_state.conn_key = ""
-if "spaces" not in st.session_state: st.session_state.spaces = []
-if "models" not in st.session_state: st.session_state.models = []
-if "views" not in st.session_state: st.session_state.views = []
-if "df" not in st.session_state: st.session_state.df = None
-if "filtered_df" not in st.session_state: st.session_state.filtered_df = None
-st.session_state.setdefault("logs", [])
-st.session_state.setdefault("prefill", {})
+ss = st.session_state
+ss.setdefault("client", None)
+ss.setdefault("conn_key", "")
+ss.setdefault("spaces", [])
+ss.setdefault("models", [])
+ss.setdefault("views", [])
+ss.setdefault("dfs_by_viewkey", {})       # key: "eid@ver" -> DataFrame
+ss.setdefault("combined_df", None)         # union of selected views
+ss.setdefault("current_viewkey", "__ALL__") # currently selected in explorer
+ss.setdefault("logs", [])
+ss.setdefault("prefill", {})
+ss.setdefault("table_names_by_viewkey", {})
+
 
 # ---------- Tabs ----------
 tabs = st.tabs(["🔌 Connect & Download", "📊 Data Explorer", "🪵 Logs", "ℹ️ About"])
@@ -362,7 +372,7 @@ with tabs[0]:
     env_profs = env_profiles()
     saved_profs = load_json_profiles(PROFILE_STORE_PATH_CDF)
 
-    colp1, colp2, colp3 = st.columns([2,1,1])
+    colp1, colp2, colp3 = st.columns([2, 1, 1])
     with colp1:
         options = ["(none)"] + [f"[env] {n}" for n in sorted(env_profs.keys())] + [f"[saved] {n}" for n in sorted(saved_profs.keys())]
         picked = st.selectbox("Load CDF profile", options)
@@ -370,14 +380,14 @@ with tabs[0]:
         if st.button("Load", use_container_width=True):
             if picked.startswith("[env] "):
                 name = picked.replace("[env] ", "", 1)
-                st.session_state.prefill = env_profs.get(name, {})
+                ss.prefill = env_profs.get(name, {})
                 log(f"Loaded env profile '{name}'.")
             elif picked.startswith("[saved] "):
                 name = picked.replace("[saved] ", "", 1)
-                st.session_state.prefill = saved_profs.get(name, {})
+                ss.prefill = saved_profs.get(name, {})
                 log(f"Loaded saved profile '{name}'.")
             else:
-                st.session_state.prefill = {}
+                ss.prefill = {}
     with colp3:
         can_delete = picked.startswith("[saved] ")
         if st.button("Delete", use_container_width=True, disabled=not can_delete):
@@ -387,7 +397,7 @@ with tabs[0]:
             log(f"Deleted profile '{name}'.")
 
     def get_val(name, fallback):
-        return st.session_state.prefill.get(name) or env_defaults.get(name) or fallback
+        return ss.prefill.get(name) or env_defaults.get(name) or fallback
 
     with st.form("conn"):
         c1, c2 = st.columns(2)
@@ -402,9 +412,9 @@ with tabs[0]:
             show = st.toggle("Show client secret", value=False)
             client_secret = st.text_input("Client Secret", value=get_val("client_secret", ""),
                                           type="default" if show else "password").strip()
-            max_rows = st.number_input("Max rows to fetch", min_value=1, value=50000, step=1000)
+            max_rows = st.number_input("Max rows to fetch (per view)", min_value=1, value=50000, step=1000)
 
-        sp1, sp2 = st.columns([3,1])
+        sp1, sp2 = st.columns([3, 1])
         with sp1:
             prof_name = st.text_input("Save as CDF profile (persists to /data)", placeholder="e.g., prod-cdf")
         with sp2:
@@ -433,208 +443,150 @@ with tabs[0]:
 
     if connect and not errs:
         try:
-            st.session_state.client = build_client(host, project, token_url, client_id, client_secret, scopes)
-            st.session_state.conn_key = f"{host}|{project}|{token_url}|{client_id}|{scopes}"
-            _ = list_spaces(st.session_state.client, st.session_state.conn_key)
+            ss.client = build_client(host, project, token_url, client_id, client_secret, scopes)
+            ss.conn_key = f"{host}|{project}|{token_url}|{client_id}|{scopes}"
+            _ = list_spaces(ss.client, ss.conn_key)
             st.success(f"Connected to '{project}'.")
             log("Connected.")
-            st.session_state.spaces = []
-            st.session_state.models = []
-            st.session_state.views = []
-            st.session_state.df = None
-            st.session_state.filtered_df = None
+            ss.spaces = []
+            ss.models = []
+            ss.views = []
+            ss.dfs_by_viewkey = {}
+            ss.combined_df = None
+            ss.current_viewkey = "__ALL__"
+            ss.table_names_by_viewkey = {}
         except Exception as e:
             st.error(str(e)); log(f"ERROR connect: {e}")
 
     st.divider()
     st.header("Download")
-    st.caption("1) Click **Load Spaces**. 2) **Choose your Space here →** (dropdown). 3) Load Models, choose one. 4) Load Views, choose one. 5) Fetch.")
+    st.caption("Flow: **Load Spaces** → choose Space → **Load Models** → choose Model → **Load Views** → choose one or many → **Fetch data**.")
 
     cols = st.columns([1, 3])
     with cols[0]:
-        if st.button("Load Spaces", use_container_width=True, disabled=st.session_state.client is None):
+        if st.button("Load Spaces", use_container_width=True, disabled=ss.client is None):
             try:
-                st.session_state.spaces = list_spaces(st.session_state.client, st.session_state.conn_key)
-                log(f"Loaded {len(st.session_state.spaces)} spaces.")
+                ss.spaces = list_spaces(ss.client, ss.conn_key)
+                log(f"Loaded {len(ss.spaces)} spaces.")
             except Exception as e:
                 st.error(str(e)); log(f"ERROR load spaces: {e}")
     with cols[1]:
         st.caption("Choose your Space here →")
-        space = st.selectbox("Space", options=st.session_state.spaces or ["(none)"], label_visibility="collapsed")
+        space = st.selectbox("Space", options=ss.spaces or ["(none)"], label_visibility="collapsed")
 
     cols = st.columns([1, 3])
     with cols[0]:
         load_models_disabled = (not space) or space == "(none)"
         if st.button("Load Models", use_container_width=True, disabled=load_models_disabled):
             try:
-                st.session_state.models = list_models_latest(st.session_state.client, st.session_state.conn_key, space)
-                log(f"Loaded {len(st.session_state.models)} models for space '{space}'.")
+                ss.models = list_models_latest(ss.client, ss.conn_key, space)
+                log(f"Loaded {len(ss.models)} models for space '{space}'.")
             except Exception as e:
                 st.error(str(e)); log(f"ERROR load models: {e}")
     with cols[1]:
         st.caption("Choose your Model here →")
-        dm_display = [f"{eid} v{ver}" for (eid, ver) in st.session_state.models] or ["(none)"]
+        dm_display = [f"{eid} v{ver}" for (eid, ver) in ss.models] or ["(none)"]
         dm_choice = st.selectbox("Model", options=dm_display, label_visibility="collapsed")
         dm_eid, dm_ver = ("", "")
         if " v" in dm_choice:
             dm_eid, dm_ver = dm_choice.rsplit(" v", 1)
-        manual = st.checkbox("Specify DM version manually", value=False, disabled=dm_choice == "(none)")
-        if manual:
-            dm_ver = st.text_input("DM Version", value=dm_ver)
 
     cols = st.columns([1, 3])
     with cols[0]:
         load_views_disabled = not (dm_eid and dm_ver and dm_choice != "(none)")
         if st.button("Load Views", use_container_width=True, disabled=load_views_disabled):
             try:
-                st.session_state.views = list_views_for_model(st.session_state.client, st.session_state.conn_key, space, dm_eid, dm_ver)
-                log(f"Loaded {len(st.session_state.views)} views for model '{dm_eid}' v{dm_ver}.")
+                ss.views = list_views_for_model(ss.client, ss.conn_key, space, dm_eid, dm_ver)
+                log(f"Loaded {len(ss.views)} views for model '{dm_eid}' v{dm_ver}.")
             except Exception as e:
                 st.error(str(e)); log(f"ERROR load views: {e}")
     with cols[1]:
-        st.caption("Choose your View here →")
-        view_display = [f"{eid} v{ver}" for (eid, ver) in st.session_state.views] or ["(none)"]
-        view_choice = st.selectbox("View", options=view_display, label_visibility="collapsed")
-        view_eid, view_ver = ("", "")
-        if " v" in view_choice:
-            view_eid, view_ver = view_choice.rsplit(" v", 1)
-        if st.checkbox("Specify view version manually", value=False, disabled=view_choice == "(none)"):
-            view_ver = st.text_input("View Version", value=view_ver, key="view_ver_manual")
+        st.caption("Choose your Views here → (multi-select)")
+        view_display = [f"{eid} v{ver}" for (eid, ver) in ss.views] or []
+        selected_views = st.multiselect("Views", options=view_display, default=view_display[:1])
 
     cols = st.columns(2)
     with cols[0]:
-        fetch_enabled = bool(st.session_state.client and space and dm_eid and dm_ver and view_eid and view_ver)
+        fetch_enabled = bool(ss.client and space and dm_eid and dm_ver and selected_views)
         if st.button("Fetch data", type="primary", use_container_width=True, disabled=not fetch_enabled):
             try:
+                frames = []
+                fetched_keys = []
                 with st.spinner("Fetching instances…"):
-                    df = fetch_view_dataframe(st.session_state.client, st.session_state.conn_key, space, dm_eid, dm_ver, view_eid, view_ver, max_rows=max_rows)
-                st.session_state.df = df
-                st.session_state.filtered_df = None
-                st.success(f"Loaded {len(df):,} rows.")
-                log(f"Fetched {len(df):,} rows from {space}/{dm_eid} v{dm_ver} → {view_eid} v{view_ver}.")
-                st.download_button("Download CSV", df.to_csv(index=False).encode("utf-8"),
-                                   file_name=f"{view_eid}.csv", mime="text/csv")
+                    for choice in selected_views:
+                        v_eid, v_ver = choice.rsplit(" v", 1)
+                        key = f"{v_eid}@{v_ver}"
+                        df_part = fetch_view_dataframe(ss.client, ss.conn_key, space, dm_eid, dm_ver, v_eid, v_ver, max_rows=max_rows)
+                        ss.dfs_by_viewkey[key] = df_part
+                        frames.append(df_part)
+                        fetched_keys.append(key)
+                        # default table names
+                        ss.table_names_by_viewkey.setdefault(key, _sanitize_table_name(v_eid))
+                if frames:
+                    ss.combined_df = pd.concat(frames, ignore_index=True, sort=False)
+                    ss.current_viewkey = "__ALL__"
+                    st.success(f"Loaded {len(ss.combined_df):,} rows from {len(frames)} view(s).")
+                    log(f"Fetched {len(ss.combined_df):,} rows from {len(frames)} views: {', '.join(fetched_keys)}")
+                    st.download_button(
+                        "Download CSV (all views)",
+                        ss.combined_df.to_csv(index=False).encode("utf-8"),
+                        file_name=f"{dm_eid}_views.csv",
+                        mime="text/csv",
+                    )
+                else:
+                    st.warning("No views selected.")
             except Exception as e:
                 st.error(str(e)); log(f"ERROR fetch: {e}")
     with cols[1]:
         if st.button("Clear data", use_container_width=True):
-            st.session_state.df = None
-            st.session_state.filtered_df = None
+            ss.dfs_by_viewkey = {}
+            ss.combined_df = None
+            ss.current_viewkey = "__ALL__"
+            ss.table_names_by_viewkey = {}
             log("Cleared data.")
 
-    df = st.session_state.df
-    if df is not None and not df.empty:
-        st.divider()
-        st.subheader("Commit to MySQL DB")
+    # Quick summary of what we have
+    if ss.dfs_by_viewkey:
+        st.info(f"Cached views: {len(ss.dfs_by_viewkey)} • Rows (combined): {len(ss.combined_df) if isinstance(ss.combined_df, pd.DataFrame) else 0:,}")
 
-        mysql_envs = mysql_env_profiles()
-        mysql_saved = load_json_profiles(PROFILE_STORE_PATH_MYSQL)
-        mysql_defaults = _mysql_env_default()
-
-        colm1, colm2, colm3, colm4 = st.columns([2,1,1,1])
-        with colm1:
-            opts = ["(none)"] + [f"[env] {n}" for n in sorted(mysql_envs.keys())] + [f"[saved] {n}" for n in sorted(mysql_saved.keys())]
-            picked_mysql = st.selectbox("Load MySQL profile", opts)
-        with colm2:
-            if st.button("Load MySQL", use_container_width=True):
-                if picked_mysql.startswith("[env] "):
-                    name = picked_mysql.replace("[env] ", "", 1)
-                    st.session_state["mysql_prof"] = mysql_envs.get(name, {})
-                    log(f"Loaded MySQL env profile '{name}'.")
-                elif picked_mysql.startswith("[saved] "):
-                    name = picked_mysql.replace("[saved] ", "", 1)
-                    st.session_state["mysql_prof"] = mysql_saved.get(name, {})
-                    log(f"Loaded MySQL saved profile '{name}'.")
-                else:
-                    st.session_state["mysql_prof"] = {}
-        with colm3:
-            can_delete_mysql = picked_mysql.startswith("[saved] ")
-            if st.button("Delete MySQL", use_container_width=True, disabled=not can_delete_mysql):
-                name = picked_mysql.replace("[saved] ", "", 1)
-                delete_json_profile(PROFILE_STORE_PATH_MYSQL, name)
-                st.success(f"Deleted MySQL profile '{name}'.")
-                log(f"Deleted MySQL profile '{name}'.")
-        with colm4:
-            prof_preview = st.session_state.get("mysql_prof", {}) or mysql_defaults
-            if st.button("Test connection", use_container_width=True):
-                ok, msg = test_mysql_connection(prof_preview)
-                (st.success if ok else st.error)(msg)
-                log(f"MySQL test: {msg}")
-
-        prof = st.session_state.get("mysql_prof", {}) or mysql_defaults
-        cma, cmb, cmc, cmd, cme = st.columns([2,1,1,1,1])
-        with cma:
-            mysql_host = st.text_input("Host", value=prof.get("host", ""))
-        with cmb:
-            mysql_port = st.text_input("Port", value=str(prof.get("port", "3306")))
-        with cmc:
-            mysql_user = st.text_input("User", value=prof.get("user", ""))
-        with cmd:
-            showp = st.toggle("Show password", value=False)
-            mysql_password = st.text_input("Password", value=prof.get("password", ""), type="default" if showp else "password")
-        with cme:
-            mysql_db = st.text_input("Database", value=prof.get("db", ""))
-
-        spm1, spm2 = st.columns([3,1])
-        with spm1:
-            mysql_prof_name = st.text_input("Save MySQL profile as (persists to /data)", placeholder="e.g., local-db")
-        with spm2:
-            if st.button("Save MySQL", use_container_width=True) and mysql_prof_name:
-                try:
-                    save_json_profile(PROFILE_STORE_PATH_MYSQL, mysql_prof_name, {
-                        "host": mysql_host, "port": mysql_port, "user": mysql_user,
-                        "password": mysql_password, "db": mysql_db
-                    })
-                    st.success(f"Saved MySQL profile '{mysql_prof_name}'.")
-                    log(f"Saved MySQL profile '{mysql_prof_name}'.")
-                except Exception as e:
-                    st.error(f"Save failed: {e}")
-                    log(f"ERROR save mysql profile: {e}")
-
-        default_table = _sanitize_table_name(view_eid or "cdf_view")
-        st.caption("Table to write (existing table will be **replaced**):")
-        table_name = st.text_input("Table name", value=default_table)
-        use_filtered = st.checkbox("Commit filtered rows (from Data Explorer tab)", value=False)
-
-        if st.button("Commit to MySQL DB", type="primary"):
-            try:
-                data_to_write = st.session_state.filtered_df if (use_filtered and isinstance(st.session_state.filtered_df, pd.DataFrame)) else df
-                if data_to_write is None or data_to_write.empty:
-                    raise RuntimeError("No data to commit. Fetch data first, or disable 'Commit filtered rows'.")
-                with st.spinner("Writing to MySQL…"):
-                    rows = commit_dataframe_to_mysql(
-                        data_to_write,
-                        table_name,
-                        {"host": mysql_host, "port": mysql_port, "user": mysql_user, "password": mysql_password, "db": mysql_db},
-                    )
-                st.success(f"Wrote {rows:,} rows to `{mysql_db}.{table_name}` (replaced table).")
-                log(f"MySQL commit: {rows} rows -> {mysql_db}.{table_name}")
-            except OperationalError as oe:
-                st.error(f"MySQL commit failed (OperationalError): {oe.orig}")
-                log(f"ERROR mysql commit: {oe.orig}")
-            except Exception as e:
-                st.error(f"MySQL commit failed: {e}")
-                log(f"ERROR mysql commit: {e}")
 
 # ===== Data Explorer =====
 with tabs[1]:
     st.header("Table & Filters")
-    df = st.session_state.df
-    if df is None or df.empty:
-        st.info("No data yet. Use **Connect & Download** first.")
+
+    if not ss.dfs_by_viewkey:
+        st.info("No data yet. Use **Connect & Download** to fetch one or more views.")
     else:
-        filtered = filter_dataframe(df)
-        st.session_state.filtered_df = filtered
-        st.caption(f"Showing {len(filtered):,} / {len(df):,} rows")
-        st.dataframe(filtered, use_container_width=True, height=520)
-        st.download_button("Download filtered CSV", filtered.to_csv(index=False).encode("utf-8"),
-                           file_name="filtered.csv", mime="text/csv")
+        # Picker for current view
+        keys_sorted = ["__ALL__"] + sorted(ss.dfs_by_viewkey.keys())
+        labels = {"__ALL__": "All views (combined)"} | {k: f"{k.split('@',1)[0]} (v{k.split('@',1)[1]})" for k in ss.dfs_by_viewkey}
+        pick = st.selectbox("Show", options=keys_sorted, format_func=lambda k: labels[k], index=keys_sorted.index(ss.current_viewkey) if ss.current_viewkey in keys_sorted else 0)
+        ss.current_viewkey = pick
+
+        # Select dataframe
+        if pick == "__ALL__":
+            df_show = ss.combined_df if isinstance(ss.combined_df, pd.DataFrame) else pd.concat(list(ss.dfs_by_viewkey.values()), ignore_index=True, sort=False)
+        else:
+            df_show = ss.dfs_by_viewkey.get(pick)
+
+        if df_show is None or df_show.empty:
+            st.warning("No rows to display.")
+        else:
+            filtered = filter_dataframe(df_show)
+            st.caption(f"Showing {len(filtered):,} / {len(df_show):,} rows")
+            st.dataframe(filtered, use_container_width=True, height=520)
+            st.download_button("Download filtered CSV", filtered.to_csv(index=False).encode("utf-8"),
+                               file_name="filtered.csv", mime="text/csv")
+            # Keep filtered only for current view
+            ss["filtered_df_current"] = filtered
+
 
 # ===== Logs =====
 with tabs[2]:
     st.header("Logs")
-    log_text = "\n".join(st.session_state.logs[-500:]) if st.session_state.logs else "No logs yet."
+    log_text = "\n".join(ss.logs[-500:]) if ss.logs else "No logs yet."
     st.text_area("Activity", value=log_text, height=240, label_visibility="collapsed")
+
 
 # ===== About =====
 with tabs[3]:
@@ -646,3 +598,155 @@ with tabs[3]:
             st.markdown(f.read())
     except FileNotFoundError:
         st.info("Changelog not bundled in this image. Add `COPY CHANGELOG.md ./` to your Dockerfile or bind-mount the project.")
+
+
+# ===== Commit to MySQL (appears below Data Explorer when data is present) =====
+if ss.dfs_by_viewkey:
+    st.divider()
+    st.subheader("Commit to MySQL DB")
+
+    # Profiles (same as before)
+    mysql_envs = mysql_env_profiles()
+    mysql_saved = load_json_profiles(PROFILE_STORE_PATH_MYSQL)
+    mysql_defaults = {
+        "host": _env("MYSQL_HOST", "host.docker.internal"),
+        "port": _env("MYSQL_PORT", "3306"),
+        "user": _env("MYSQL_USER", ""),
+        "password": _env("MYSQL_PASSWORD", ""),
+        "db": _env("MYSQL_DB", ""),
+    }
+
+    colm1, colm2, colm3, colm4 = st.columns([2, 1, 1, 1])
+    with colm1:
+        opts = ["(none)"] + [f"[env] {n}" for n in sorted(mysql_envs.keys())] + [f"[saved] {n}" for n in sorted(mysql_saved.keys())]
+        picked_mysql = st.selectbox("Load MySQL profile", opts)
+    with colm2:
+        if st.button("Load MySQL", use_container_width=True):
+            if picked_mysql.startswith("[env] "):
+                name = picked_mysql.replace("[env] ", "", 1)
+                ss["mysql_prof"] = mysql_envs.get(name, {})
+                log(f"Loaded MySQL env profile '{name}'.")
+            elif picked_mysql.startswith("[saved] "):
+                name = picked_mysql.replace("[saved] ", "", 1)
+                ss["mysql_prof"] = mysql_saved.get(name, {})
+                log(f"Loaded MySQL saved profile '{name}'.")
+            else:
+                ss["mysql_prof"] = {}
+    with colm3:
+        can_delete_mysql = picked_mysql.startswith("[saved] ")
+        if st.button("Delete MySQL", use_container_width=True, disabled=not can_delete_mysql):
+            name = picked_mysql.replace("[saved] ", "", 1)
+            delete_json_profile(PROFILE_STORE_PATH_MYSQL, name)
+            st.success(f"Deleted MySQL profile '{name}'.")
+            log(f"Deleted MySQL profile '{name}'.")
+    with colm4:
+        prof_preview = ss.get("mysql_prof", {}) or mysql_defaults
+        if st.button("Test connection", use_container_width=True):
+            ok, msg = test_mysql_connection(prof_preview)
+            (st.success if ok else st.error)(msg)
+            log(f"MySQL test: {msg}")
+
+    prof = ss.get("mysql_prof", {}) or mysql_defaults
+    cma, cmb, cmc, cmd, cme = st.columns([2, 1, 1, 1, 1])
+    with cma:
+        mysql_host = st.text_input("Host", value=prof.get("host", ""))
+    with cmb:
+        mysql_port = st.text_input("Port", value=str(prof.get("port", "3306")))
+    with cmc:
+        mysql_user = st.text_input("User", value=prof.get("user", ""))
+    with cmd:
+        showp = st.toggle("Show password", value=False)
+        mysql_password = st.text_input("Password", value=prof.get("password", ""), type="default" if showp else "password")
+    with cme:
+        mysql_db = st.text_input("Database", value=prof.get("db", ""))
+
+    spm1, spm2 = st.columns([3, 1])
+    with spm1:
+        mysql_prof_name = st.text_input("Save MySQL profile as (persists to /data)", placeholder="e.g., local-db")
+    with spm2:
+        if st.button("Save MySQL", use_container_width=True) and mysql_prof_name:
+            try:
+                save_json_profile(PROFILE_STORE_PATH_MYSQL, mysql_prof_name, {
+                    "host": mysql_host, "port": mysql_port, "user": mysql_user,
+                    "password": mysql_password, "db": mysql_db
+                })
+                st.success(f"Saved MySQL profile '{mysql_prof_name}'.")
+                log(f"Saved MySQL profile '{mysql_prof_name}'.")
+            except Exception as e:
+                st.error(f"Save failed: {e}")
+                log(f"ERROR save mysql profile: {e}")
+
+    # Per-view table names
+    st.markdown("**Table names per view (for 'Commit all views')**")
+    table_cols = st.columns(2)
+    idx = 0
+    for key in sorted(ss.dfs_by_viewkey.keys()):
+        eid, ver = key.split("@", 1)
+        with table_cols[idx % 2]:
+            ss.table_names_by_viewkey[key] = st.text_input(
+                f"{eid} (v{ver})",
+                value=ss.table_names_by_viewkey.get(key, _sanitize_table_name(eid)),
+                key=f"table_{key}",
+            )
+        idx += 1
+
+    # Commit buttons
+    ca, cb = st.columns(2)
+
+    with ca:
+        # Commit only current selection (optionally filtered)
+        if ss.current_viewkey != "__ALL__":
+            use_filtered = st.checkbox("Commit filtered rows (current view only)", value=False)
+            if st.button("Commit current view", type="primary", use_container_width=True):
+                try:
+                    df_src = ss.get("filtered_df_current") if use_filtered else ss.dfs_by_viewkey.get(ss.current_viewkey)
+                    if df_src is None or df_src.empty:
+                        raise RuntimeError("No data to commit for the current view.")
+                    table_name = ss.table_names_by_viewkey.get(ss.current_viewkey, _sanitize_table_name(ss.current_viewkey.split('@',1)[0]))
+                    with st.spinner("Writing current view to MySQL…"):
+                        rows = commit_dataframe_to_mysql(
+                            df_src,
+                            table_name,
+                            {"host": mysql_host, "port": mysql_port, "user": mysql_user, "password": mysql_password, "db": mysql_db},
+                        )
+                    st.success(f"Wrote {rows:,} rows to `{mysql_db}.{table_name}`.")
+                    log(f"MySQL commit (single): {rows} rows -> {mysql_db}.{table_name}")
+                except OperationalError as oe:
+                    st.error(f"MySQL commit failed (OperationalError): {oe.orig}")
+                    log(f"ERROR mysql commit single: {oe.orig}")
+                except Exception as e:
+                    st.error(f"MySQL commit failed: {e}")
+                    log(f"ERROR mysql commit single: {e}")
+        else:
+            st.info("Select a specific view above if you want to commit only that view (with optional filters).")
+
+    with cb:
+        # Commit all views (unfiltered, each to its own table name)
+        if st.button("Commit ALL views", use_container_width=True):
+            try:
+                if not ss.dfs_by_viewkey:
+                    raise RuntimeError("No views to commit.")
+                results = []
+                with st.spinner("Writing all views to MySQL…"):
+                    for key, df_src in ss.dfs_by_viewkey.items():
+                        if df_src is None or df_src.empty:
+                            continue
+                        table_name = ss.table_names_by_viewkey.get(key, _sanitize_table_name(key.split('@',1)[0]))
+                        rows = commit_dataframe_to_mysql(
+                            df_src,
+                            table_name,
+                            {"host": mysql_host, "port": mysql_port, "user": mysql_user, "password": mysql_password, "db": mysql_db},
+                        )
+                        results.append((key, rows, table_name))
+                if results:
+                    lines = [f"- {k} → `{mysql_db}.{t}`: {r:,} rows" for (k, r, t) in results]
+                    st.success("Committed:\n" + "\n".join(lines))
+                    log("MySQL commit (all): " + "; ".join([f"{k}->{t}:{r}" for (k, r, t) in results]))
+                else:
+                    st.warning("Nothing written (no rows).")
+            except OperationalError as oe:
+                st.error(f"MySQL commit failed (OperationalError): {oe.orig}")
+                log(f"ERROR mysql commit all: {oe.orig}")
+            except Exception as e:
+                st.error(f"MySQL commit failed: {e}")
+                log(f"ERROR mysql commit all: {e}")

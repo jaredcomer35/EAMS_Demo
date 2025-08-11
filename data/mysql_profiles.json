@@ -5,5 +5,12 @@
     "user": "root",
     "password": "Convergix@12345",
     "db": "EAMS_Demo"
+  },
+  "LocalMySQL_Cargill_EAMS": {
+    "host": "host.docker.internal",
+    "port": "3306",
+    "user": "root",
+    "password": "Convergix@12345",
+    "db": "Cargill_EAMS"
   }
 }
