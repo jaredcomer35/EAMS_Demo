@@ -6,13 +6,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
-- (WIP) **DataMosaix Upload** tab to write data from CSV/MySQL into CDF Data Modeling Views with column-to-property mapping, dry-run validation, and batch apply.
+- **DataMosaix Upload** (preview): new tab with end-to-end prep flow
+  - Target picker: **Space → Model → View** (loads properties with inheritance)
+  - Source options: **CSV upload**, **MySQL table**, or **Combined** dataset from Connect & Download
+  - Column → property **mapping UI** with best-effort auto-map
+  - `external_id` options: use an existing column or auto-generate with a prefix
+  - **Dry-run** preview builds a payload DataFrame for would-be upload
+  - Save mapped payload to **`/data/uploads/*.csv`** and/or **download** it
 
 ### Changed
-- (placeholder)
+- None yet.
 
 ### Fixed
-- (placeholder)
+- None yet.
 
 ### Notes
 
