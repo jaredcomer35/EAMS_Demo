@@ -7,12 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 
-
 ### Changed
-
 
 ### Fixed
 
+### Notes
+
+## [1.2.0] - 2025-08-11
+
+### Added
+- **MySQL Table Viewer** (Data Explorer tab): connect via saved/env profiles, list tables, select one or many to explore, and download filtered CSV.
+- **Per-column filter operators** in Data Explorer:
+  - Text: *Contains*, *Not Contains*, *Equals*, *Not Equals*
+  - Numeric: *Equals*, *Not Equals*, *Range*
+  - Date/Datetime: *Between*, *On date*, *Not on date*
+- **Quick Stats panel** under the table:
+  - Unique counts per column, non-null %, sample values
+  - Numeric `describe()` summary
+  - Datetime min/max coverage
+  - Top-20 counts by `Plant` (if present), with chart
+- Profile management UX across CDF/MySQL viewers/destinations persists to `/data` volume.
+
+### Changed
+- **AI Demo Data path transform** now **only replaces the server name** and preserves the original IP and the rest of the path  
+  (e.g., `MSDUNL227MP!...\\10.4.10.207\\Backplane\\4` → `<NewServer>\\10.4.10.207\\Backplane\\4`).
+- Branding updates: app title is **Convergix DataMosaix View Explorer**, updated logo.
+
+### Fixed
+- Data Explorer filters no longer clear themselves due to duplicate widget IDs; keys now stable per DB/table/column.
+- Commit-to-MySQL section retained after fetching views and clearing.
 
 ## [1.1.0] - 2025-08-11
 ### Added
@@ -77,7 +100,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 
 ## Links
-[Unreleased]: https://github.com/jaredcomer35/EAMS_Demo/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/jaredcomer35/EAMS_Demo/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/jaredcomer35/EAMS_Demo/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/jaredcomer35/EAMS_Demo/compare/v1.0.0...v1.1.0   
 [1.0.0]: https://github.com/jaredcomer35/EAMS_Demo/compare/v0.1.1...v1.0.0  
 [0.1.1]: https://github.com/jaredcomer35/EAMS_Demo/compare/v0.1.0...v0.1.1  
