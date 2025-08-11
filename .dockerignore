@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+*.pyo
+*.log
+.git
+node_modules
+.env
+data/*.csv

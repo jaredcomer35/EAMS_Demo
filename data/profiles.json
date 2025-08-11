@@ -1,0 +1,10 @@
+{
+  "CargillFoodApp": {
+    "host": "https://westeurope-1.cognitedata.com",
+    "project": "cargillfood",
+    "token_url": "https://datamosaix-prod.us.auth0.com/oauth/token",
+    "client_id": "1Aiadk62XcVZHp0X4r6zC1SMJ9zYuXQx",
+    "client_secret": "36KipsC_W90FqAw32pzvxtCiFLO_LRu3DXP3S--4mNikPKZMqWilcIhVD5-X32eQ",
+    "scopes": "user_impersonation"
+  }
+}

@@ -1,0 +1,27 @@
+services:
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    ports:
+      - "8501:8501"
+
+    # Persist profiles & any local cache
+    volumes:
+      - ./data:/data
+
+    # Optional: defaults only (prefill in UI). Remove if you don’t want it.
+    env_file:
+      - .env
+
+    # So the container can reach MySQL on the host (Linux)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    # These are already defaulted in the Dockerfile; override if you want a different path
+    # environment:
+    #   - PROFILE_STORE_PATH=/data/profiles.json
+    #   - MYSQL_PROFILE_STORE_PATH=/data/mysql_profiles.json
+
+    restart: unless-stopped
