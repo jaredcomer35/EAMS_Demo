@@ -5,13 +5,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [1.3.0] - 2025-08-12
 ### Added
+- **Quick Change**: One-prompt pipeline to transform `Cargill_EAMS` → write `*_demo` to `EAMS_Demo` (preserving `external_id`) and upload to chosen CDF views. Clear logs indicate when OpenAI naming was used or when we fell back to heuristics.
+- **DataMosaix Upload**: CSV→View and MySQL→View multi-map UIs; per-mapping row limits (default 30k); default table suggestion `{view}_demo`; optional *Sync* (delete target rows not present in source by `external_id`); chunk size via `CDF_UPLOAD_CHUNK_SIZE` (default 1000).
+- **Data Explorer**: Per-column filters (Equals / Not Equals / Contains / Not Contains; numeric ranges; date ops), plus quick stats and Plant counts.
 
 ### Changed
+- **AI Demo Data**: Never mutate `external_id`. Improved industry-aware naming for Plants/Regions/Segments with richer context; path mutation now only replaces the server segment and preserves the IP portion and remainder.
+- **Logging**: All major actions log with timestamps; more verbose progress reporting for Upload and Quick Change.
 
 ### Fixed
+- Streamlit duplicate key issues in inputs.
+- Per-column filter state clearing.
+- Default “Max Rows” set to **30,000** where applicable.
 
-### Notes
+### Security
+- OpenAI API key sourced from `.env` as `OPENAI_API` (or `OPENAI_API_KEY` as fallback).
+
 
 ## [1.2.0] - 2025-08-11
 
@@ -100,7 +112,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 
 ## Links
-[Unreleased]: https://github.com/jaredcomer35/EAMS_Demo/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/<org>/<repo>/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/<org>/<repo>/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/jaredcomer35/EAMS_Demo/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/jaredcomer35/EAMS_Demo/compare/v1.0.0...v1.1.0   
 [1.0.0]: https://github.com/jaredcomer35/EAMS_Demo/compare/v0.1.1...v1.0.0  
