@@ -805,7 +805,6 @@ def apply_common_changes(df: pd.DataFrame, industry: str, maps: Dict, server_ove
             df[col] = df[col].astype(str).apply(preserve_format_scramble)
 
     # Intentionally do NOT touch DeviceAddress anymore.
-    # if "DeviceAddress" in df.columns: <removed>
 
     if "RAAIFileName" in df.columns:
         df["RAAIFileName"] = df.apply(lambda r: mutate_raai_filename(str(r["RAAIFileName"]), str(r.get("Plant","Plant"))), axis=1)
@@ -1133,12 +1132,13 @@ with tabs[0]:
             default_combined = ss.get("combined_table_name") or _sanitize_table_name(f"{ss.dm_ctx.get('dm_eid','combined')}_all_views")
             ss["combined_table_name"] = st.text_input("Destination table for ALL (combined)", value=default_combined, key="cdf_combined_tbl")
 
-            with st.expander("Edit per-view table names (for 'Commit EACH view')", expanded=False):
-                cols_map = st.columns(2)
-                for i, k in enumerate(sorted(ss.dfs_by_viewkey.keys())):
-                    with cols_map[i % 2]:
-                        default_out = _sanitize_table_name(k.split("@",1)[0])
-                        ss.table_names_by_viewkey[k] = st.text_input(f"{k}", value=ss.table_names_by_viewkey.get(k, default_out), key=f"cdf_map_{k}")
+            # ---- FIX: replace the broken nested expander with a simple header + inputs ----
+            st.markdown("**Per-view table names (for 'Commit EACH view')**")
+            cols_map = st.columns(2)
+            for i, k in enumerate(sorted(ss.dfs_by_viewkey.keys())):
+                with cols_map[i % 2]:
+                    default_out = _sanitize_table_name(k.split("@",1)[0])
+                    ss.table_names_by_viewkey[k] = st.text_input(f"{k}", value=ss.table_names_by_viewkey.get(k, default_out), key=f"cdf_map_{k}")
 
             cmt1, cmt2 = st.columns(2)
             with cmt1:
